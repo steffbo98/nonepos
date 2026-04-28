@@ -1,0 +1,6 @@
+{
+  "name": "OmniSync POS",
+  "description": "A cutting-edge hybrid POS system featuring real-time synchronization, offline support, multi-gateway payments, and advanced analytics.",
+  "requestFramePermissions": ["camera", "geolocation"],
+  "majorCapabilities": ["Firebase", "Full-Stack"]
+}
