@@ -1,26 +1,37 @@
 {
-  "name": "react-example",
+  "name": "nonepos",
+  "description": "Professional Point of Sale Desktop Application",
+  "version": "1.0.0",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
+  "main": "dist/main/index.js",
+  "homepage": "./",
   "scripts": {
-    "dev": "tsx server.ts",
-    "start": "node server.ts",
-    "build": "vite build",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:renderer\"",
+    "dev:server": "tsx watch src/main/index.ts",
+    "dev:renderer": "vite",
+    "build": "npm run build:renderer && npm run build:server",
+    "build:renderer": "vite build",
+    "build:server": "tsc --project tsconfig.main.json",
+    "electron": "electron .",
+    "electron-dev": "cross-env NODE_ENV=development npm run build && npm run electron",
+    "electron-build": "npm run build && electron-builder",
+    "electron-build:win": "npm run build && electron-builder --win",
     "preview": "vite preview",
-    "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@google/genai": "^1.29.0",
     "@tailwindcss/vite": "^4.1.14",
     "@types/cors": "^2.8.19",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.0.4",
+    "better-sqlite3": "^12.9.0",
+    "call-bind-apply-helpers": "^1.0.2",
     "clsx": "^2.1.1",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
-    "firebase": "^11.1.0",
+    "firebase": "^12.12.1",
     "html5-qrcode": "^2.3.8",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
@@ -33,12 +44,50 @@
     "vite-plugin-pwa": "^1.2.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "csstype": "3.1.3",
+    "electron": "^31.4.0",
+    "electron-builder": "^25.1.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.3"
+  },
+  "build": {
+    "appId": "com.nonepos.app",
+    "productName": "NonePOS",
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "afterPack": "scripts/afterPack.js",
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "NonePOS"
+    }
   }
 }

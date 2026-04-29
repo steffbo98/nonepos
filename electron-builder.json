@@ -1,0 +1,54 @@
+{
+  "build": {
+    "appId": "com.nonepos.app",
+    "productName": "NonePOS",
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*",
+      "package.json",
+      {
+        "from": "src/main",
+        "to": "Resources",
+        "filter": ["*.node"]
+      }
+    ],
+    "extraFiles": [
+      {
+        "from": "node_modules/call-bind-apply-helpers",
+        "to": "node_modules/call-bind-apply-helpers"
+      }
+    ],
+    "afterPack": "scripts/afterPack.js",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "certificateFile": null,
+      "certificatePassword": null,
+      "signingHashAlgorithms": ["sha256"],
+      "sign": null,
+      "timeStampServer": "http://timestamp.comodoca.com"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "NonePOS",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "license": null,
+      "artifactName": "${productName}-${version}-installer.${ext}"
+    }
+  }
+}

@@ -1,0 +1,5 @@
+
+> nonepos@1.0.0 lint
+> tsc --noEmit
+
+node_modules/csstype/index.d.ts(11995,127): error TS1010: '*/' expected.

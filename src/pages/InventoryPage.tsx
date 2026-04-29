@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, addDoc, getDoc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase';
+// import { collection, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, addDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+// import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+// import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase'; // Removed for desktop app
+import { getDataService } from '../lib/dataService';
+import { useSyncStatus } from '../lib/syncManager';
 import { motion, AnimatePresence } from 'motion/react';
-import { Package, Plus, Search, Filter, Trash2, Edit2, AlertCircle, X, Check, Scan, Image as ImageIcon, Upload, Loader2, Wifi, WifiOff, ChevronDown } from 'lucide-react';
+import { Package, Plus, Search, Filter, Trash2, Edit2, AlertCircle, X, Check, Scan, Image as ImageIcon, Upload, Loader2, Wifi, WifiOff, ChevronDown, History } from 'lucide-react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -23,16 +25,25 @@ export default function InventoryPage() {
   const [formData, setFormData] = useState({ name: '', price: 0, costPrice: 0, stock: 0, category: 'General', sku: '', imageUrl: '' });
   const [showScanner, setShowScanner] = useState(false);
   const [categories, setCategories] = useState<string[]>(['General']);
+  const [movementProduct, setMovementProduct] = useState<any | null>(null);
+  const [movements, setMovements] = useState<any[]>([]);
+  const scannerRef = useRef<Html5QrcodeScanner | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dataService = getDataService();
 
   useEffect(() => {
     const fetchBizType = async () => {
       try {
-        const docRef = doc(db, 'settings', 'business');
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const type = docSnap.data().type as StorePurpose;
+        const setting = await dataService.getSetting('business');
+        if (setting?.value) {
+          const data = JSON.parse(setting.value);
+          const type = data.type as StorePurpose;
           if (BUSINESS_TYPES[type]) {
             setCategories(BUSINESS_TYPES[type]);
+            setFormData(prev => ({
+              ...prev,
+              category: BUSINESS_TYPES[type].includes(prev.category) ? prev.category : BUSINESS_TYPES[type][0] || 'General'
+            }));
           }
         }
       } catch (error) {
@@ -43,8 +54,7 @@ export default function InventoryPage() {
   }, []);
   const [isUploading, setIsUploading] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const scannerRef = useRef<Html5QrcodeScanner | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const syncStatus = useSyncStatus();
 
   useEffect(() => {
     if (showScanner) {
@@ -79,32 +89,31 @@ export default function InventoryPage() {
     };
   }, [showScanner, products]);
 
+  const loadProducts = async () => {
+    try {
+      const prods = await dataService.listProducts();
+      setProducts(prods);
+    } catch (error) {
+      console.error('Failed to load products:', error);
+    }
+  };
+
   useEffect(() => {
-    const q = query(collection(db, 'products'), orderBy('name'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'products');
-    });
+    loadProducts();
 
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      unsubscribe();
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
+    const handleFocus = () => loadProducts();
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, []);
 
   const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this product?')) {
       try {
-        await deleteDoc(doc(db, 'products', id));
+        await dataService.deleteProduct(id);
+        setProducts(prev => prev.filter(product => product.id !== id));
       } catch (error) {
-        handleFirestoreError(error, OperationType.DELETE, `products/${id}`);
+        console.error('Failed to delete product:', error);
+        alert(error instanceof Error ? error.message : 'Failed to delete product');
       }
     }
   };
@@ -112,27 +121,62 @@ export default function InventoryPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const previousProduct = editingId ? products.find(product => product.id === editingId) : null;
       const data = {
         ...formData,
-        price: Number(formData.price),
-        costPrice: Number(formData.costPrice || 0),
-        stock: Number(formData.stock),
-        updatedAt: serverTimestamp(),
+        name: formData.name.trim(),
+        sku: formData.sku.trim() || null,
+        price: Number.isFinite(Number(formData.price)) ? Number(formData.price) : 0,
+        costPrice: Number.isFinite(Number(formData.costPrice)) ? Number(formData.costPrice) : 0,
+        stock: Number.isFinite(Number(formData.stock)) ? Number(formData.stock) : 0,
+        category: formData.category || 'General',
+        updatedAt: new Date().toISOString(),
       };
 
       if (editingId) {
-        await updateDoc(doc(db, 'products', editingId), data);
+        const updated = await dataService.updateProduct(editingId, data);
+        setProducts(prev => prev.map(product => product.id === editingId ? { ...product, ...updated } : product));
+        if (previousProduct && Number(previousProduct.stock) !== Number(data.stock)) {
+          await dataService.recordStockMovement(editingId, {
+            type: 'manual_adjustment',
+            quantityChange: Number(data.stock) - Number(previousProduct.stock),
+            stockAfter: Number(data.stock),
+            note: 'Manual stock edit'
+          });
+        }
         setEditingId(null);
       } else {
-        await addDoc(collection(db, 'products'), {
+        const created = await dataService.createProduct({
           ...data,
-          createdAt: serverTimestamp(),
+          createdAt: new Date().toISOString(),
         });
+        if (Number(created.stock || 0) > 0) {
+          await dataService.recordStockMovement(created.id, {
+            type: 'initial_stock',
+            quantityChange: Number(created.stock || 0),
+            stockAfter: Number(created.stock || 0),
+            note: 'Initial stock on product creation'
+          });
+        }
+        setProducts(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
         setIsAdding(false);
       }
+      await loadProducts();
       setFormData({ name: '', price: 0, costPrice: 0, stock: 0, category: 'General', sku: '', imageUrl: '' });
     } catch (error) {
-      handleFirestoreError(error, editingId ? OperationType.UPDATE : OperationType.CREATE, editingId ? `products/${editingId}` : 'products');
+      console.error('Failed to save product:', error);
+      alert(error instanceof Error ? error.message : 'Failed to save product');
+    }
+  };
+
+  const openMovements = async (product: any) => {
+    setMovementProduct(product);
+    try {
+      const data = await dataService.listStockMovements(product.id);
+      setMovements(data);
+    } catch (error) {
+      console.error('Failed to load stock movements:', error);
+      setMovements([]);
     }
   };
 
@@ -154,31 +198,27 @@ export default function InventoryPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!isOnline) {
-      alert("Image uploading requires an internet connection. Product details will be saved, but the image must be uploaded when you're back online.");
-      return;
-    }
-
-    if (!storage) {
-      alert("Firebase Storage is not enabled for this project. Please set up a Storage bucket in your Firebase Console at https://console.firebase.google.com/");
-      return;
-    }
-
     setIsUploading(true);
     try {
-      const storageRef = ref(storage, `products/${Date.now()}_${file.name}`);
-      const snapshot = await uploadBytes(storageRef, file);
-      const downloadURL = await getDownloadURL(snapshot.ref);
-      setFormData(prev => ({ ...prev, imageUrl: downloadURL }));
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+      setFormData(prev => ({ ...prev, imageUrl: dataUrl }));
     } catch (error) {
-      console.error("Upload error", error);
-      alert("Failed to upload image. Please try again.");
+      console.error("Image load error", error);
+      alert("Failed to load image. Please try again.");
     } finally {
       setIsUploading(false);
     }
   };
 
-  const filtered = products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()) || p.sku.toLowerCase().includes(search.toLowerCase()));
+  const filtered = products.filter(p =>
+    String(p.name || '').toLowerCase().includes(search.toLowerCase()) ||
+    String(p.sku || '').toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto">
@@ -187,21 +227,15 @@ export default function InventoryPage() {
           <h1 className="text-4xl font-black tracking-tighter">Inventory Control</h1>
           <div className="flex items-center gap-4 mt-1">
             <p className="text-[11px] font-mono opacity-50 uppercase tracking-widest">Manage stock levels and product catalog</p>
-            {isOnline ? (
-              <span className="flex items-center gap-1 text-[9px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 border border-emerald-100">
-                <Wifi className="w-3 h-3" /> ONLINE
-              </span>
-            ) : (
-              <span className="flex items-center gap-1 text-[9px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 border border-amber-100">
-                <WifiOff className="w-3 h-3" /> OFFLINE SYNC ACTIVE
-              </span>
-            )}
+            <span className="flex items-center gap-1 text-[9px] font-bold text-emerald-300 bg-emerald-950/30 px-2 py-0.5 border border-emerald-700/50">
+              <Wifi className="w-3 h-3" /> LOCAL DB
+            </span>
           </div>
         </div>
         <div className="flex gap-4">
           <button 
             onClick={() => setShowScanner(!showScanner)}
-            className="border-2 border-[#141414] text-[#141414] px-6 py-3 font-bold tracking-widest text-xs flex items-center gap-2 hover:bg-gray-50 transition-all"
+            className="border-2 border-[#141414] text-[#141414] px-6 py-3 font-bold tracking-widest text-xs flex items-center gap-2 hover:bg-slate-900 transition-all rounded-3xl"
           >
             <Scan className="w-4 h-4" /> {showScanner ? 'Close Scanner' : 'Scan Barcode'}
           </button>
@@ -221,7 +255,7 @@ export default function InventoryPage() {
           initial={{ opacity: 0, height: 0 }}
           animate={{ opacity: 1, height: 'auto' }}
           exit={{ opacity: 0, height: 0 }}
-          className="bg-white border border-[#141414] p-4 mb-8 overflow-hidden"
+          className="panel-soft rounded-[2rem] border border-slate-700/80 p-4 mb-8 overflow-hidden shadow-panel"
         >
           <div id="reader" className="mx-auto max-w-md"></div>
           <p className="text-center text-[10px] font-mono mt-4 opacity-50 tracking-widest">Point your camera at a barcode to register or find a product</p>
@@ -230,13 +264,13 @@ export default function InventoryPage() {
 
       <div className="flex gap-4 mb-8">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input 
             type="text" 
             placeholder="Search by name or SKU..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 focus:border-[#141414] outline-none text-sm font-mono"
+            className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-700/80 focus:border-cyan-400 outline-none text-sm font-mono text-slate-100"
           />
         </div>
       </div>
@@ -247,14 +281,14 @@ export default function InventoryPage() {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="bg-white border border-[#141414] p-8 mb-12 relative overflow-hidden"
+            className="panel rounded-[2rem] border border-slate-700/80 p-8 mb-12 relative overflow-hidden shadow-panel"
           >
             <div className="absolute top-0 left-0 w-full h-1 bg-[#141414]" />
             <div className="flex justify-between items-center mb-6">
               <h3 className="font-bold tracking-widest text-sm">{editingId ? 'Edit Product' : 'Register New Product'}</h3>
               <button 
                 onClick={() => { setIsAdding(false); setEditingId(null); }}
-                className="p-1 hover:bg-gray-100 rounded"
+                className="p-1 hover:bg-slate-900 rounded transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -264,7 +298,7 @@ export default function InventoryPage() {
                 <label className="text-[10px] font-mono font-bold opacity-40 tracking-widest">Product Image</label>
                 <div 
                   onClick={() => fileInputRef.current?.click()}
-                  className="aspect-square bg-gray-50 border border-dashed border-gray-200 flex flex-col items-center justify-center cursor-pointer hover:border-[#141414] transition-colors relative overflow-hidden"
+                  className="aspect-square bg-slate-950 border border-dashed border-slate-700/80 flex flex-col items-center justify-center cursor-pointer hover:border-cyan-400 transition-colors relative overflow-hidden"
                 >
                   {isUploading ? (
                     <div className="flex flex-col items-center gap-2">
@@ -320,18 +354,18 @@ export default function InventoryPage() {
           { label: 'Low Stock Items', value: products.filter(p => p.stock < 10).length, icon: AlertCircle, alert: products.filter(p => p.stock < 10).length > 0 },
           { label: 'Out of Stock', value: products.filter(p => p.stock === 0).length, icon: X, alert: products.filter(p => p.stock === 0).length > 0 },
         ].map((s, i) => (
-          <div key={i} className={cn("bg-white p-6 border border-gray-100 flex items-center justify-between", s.alert && "border-red-100 bg-red-50/30")}>
+          <div key={i} className={cn("bg-slate-950/80 p-6 border border-slate-700/80 flex items-center justify-between", s.alert && "border-red-700/50 bg-red-950/30")}>
             <div>
               <p className="text-[10px] font-mono font-bold opacity-40 uppercase tracking-widest">{s.label}</p>
-              <p className={cn("text-2xl font-black mt-1", s.alert && "text-red-600")}>{s.value}</p>
+              <p className={cn("text-2xl font-black mt-1", s.alert && "text-rose-400")}>{s.value}</p>
             </div>
-            <s.icon className={cn("w-8 h-8 opacity-10", s.alert && "opacity-20 text-red-600")} />
+            <s.icon className={cn("w-8 h-8 opacity-10", s.alert && "opacity-20 text-rose-400")} />
           </div>
         ))}
       </div>
 
-      <div className="bg-white border border-[#141414] overflow-hidden">
-        <div className="grid grid-cols-12 bg-gray-50 border-b border-[#141414] p-4 text-[10px] font-mono font-bold tracking-widest text-gray-500">
+      <div className="panel rounded-[2rem] border border-slate-700/80 overflow-hidden shadow-panel">
+        <div className="grid grid-cols-12 bg-slate-950/70 border-b border-slate-700/80 p-4 text-[10px] font-mono font-bold tracking-widest text-slate-400">
           <div className="col-span-1">#</div>
           <div className="col-span-3">Item Details</div>
           <div className="col-span-2">SKU</div>
@@ -342,12 +376,12 @@ export default function InventoryPage() {
           <div className="col-span-2 text-right">Actions</div>
         </div>
 
-        <div className="divide-y divide-gray-100">
+        <div className="divide-y divide-slate-700/80">
           {filtered.map((p, idx) => (
-            <div key={p.id} className="grid grid-cols-12 p-4 items-center hover:bg-gray-50 transition-colors group">
+            <div key={p.id} className="grid grid-cols-12 p-4 items-center hover:bg-slate-900 transition-colors group">
               <div className="col-span-1 font-mono text-[10px] opacity-40">{idx + 1}</div>
               <div className="col-span-3 flex items-center gap-3">
-                <div className="w-10 h-10 bg-gray-50 border border-gray-100 flex items-center justify-center overflow-hidden">
+                <div className="w-10 h-10 bg-slate-950 border border-slate-700/80 flex items-center justify-center overflow-hidden rounded-2xl">
                   {p.imageUrl ? (
                     <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   ) : (
@@ -358,7 +392,7 @@ export default function InventoryPage() {
               </div>
               <div className="col-span-2 font-mono text-xs opacity-60">{p.sku}</div>
               <div className="col-span-2">
-                <span className="text-[10px] font-bold tracking-tighter px-2 py-0.5 bg-gray-100">{p.category}</span>
+                <span className="text-[10px] font-bold tracking-tighter px-2 py-0.5 bg-slate-800 text-slate-100">{p.category}</span>
               </div>
               <div className="col-span-1 text-right font-mono text-xs font-bold">{p.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
               <div className="col-span-1 text-right font-mono text-xs font-bold text-green-600">
@@ -366,7 +400,7 @@ export default function InventoryPage() {
               </div>
               <div className={cn(
                 "col-span-1 text-right font-mono text-xs font-bold",
-                p.stock < 10 ? "text-red-500" : "text-gray-500"
+                p.stock < 10 ? "text-rose-400" : "text-slate-400"
               )}>
                 {p.stock}
               </div>
@@ -374,6 +408,7 @@ export default function InventoryPage() {
                 {isAdmin && (
                   <>
                     <button onClick={() => startEdit(p)} className="p-1 hover:text-blue-600"><Edit2 className="w-4 h-4" /></button>
+                    <button onClick={() => openMovements(p)} className="p-1 hover:text-emerald-600" title="Stock history"><History className="w-4 h-4" /></button>
                     <button onClick={() => handleDelete(p.id)} className="p-1 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
                   </>
                 )}
@@ -382,8 +417,61 @@ export default function InventoryPage() {
           ))}
         </div>
       </div>
+
+      <AnimatePresence>
+        {movementProduct && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="panel rounded-[2rem] border border-slate-700/80 w-full max-w-2xl max-h-[80vh] overflow-hidden shadow-panel"
+            >
+              <div className="p-6 border-b border-slate-700/80 flex items-center justify-between">
+                <div>
+                  <h2 className="font-black text-xl tracking-tighter">Stock History</h2>
+                  <p className="text-xs font-mono opacity-50">{movementProduct.name}</p>
+                </div>
+                <button onClick={() => { setMovementProduct(null); setMovements([]); }} className="p-2 hover:bg-slate-900 transition-colors rounded">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-6 overflow-y-auto max-h-[60vh] space-y-3">
+                {movements.length === 0 ? (
+                  <p className="text-sm opacity-40 italic text-center py-12">No stock movements recorded.</p>
+                ) : movements.map(movement => (
+                  <div key={movement.id} className="border border-slate-700/80 p-4 flex items-center justify-between gap-4 rounded-3xl bg-slate-950/70">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-widest">{String(movement.type).replace('_', ' ')}</p>
+                      <p className="text-xs opacity-50 mt-1">{movement.note || 'Stock movement'}</p>
+                      <p className="text-[10px] font-mono opacity-40 mt-2">{formatDate(movement.createdAt)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className={cn("font-mono font-black", movement.quantityChange > 0 ? "text-emerald-600" : "text-red-600")}>
+                        {movement.quantityChange > 0 ? '+' : ''}{movement.quantityChange}
+                      </p>
+                      <p className="text-[10px] opacity-50">Stock after: {movement.stockAfter}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
+}
+
+function formatDate(value: string) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString();
 }
 
 function Input({ label, type = "text", value, onChange, required = true, step }: any) {
@@ -395,7 +483,7 @@ function Input({ label, type = "text", value, onChange, required = true, step }:
         step={step}
         value={value}
         onChange={e => onChange(e.target.value)}
-        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 focus:border-[#141414] focus:bg-white outline-none text-sm font-bold transition-all"
+        className="w-full px-4 py-3 bg-slate-950 border border-slate-700/80 focus:border-cyan-400 focus:bg-slate-950/95 outline-none text-sm font-bold text-slate-100 transition-all"
         required={required}
       />
     </div>
@@ -427,7 +515,7 @@ function SearchableSelect({ label, value, options, onChange, placeholder = "Sele
       
       <div 
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 focus:border-[#141414] focus:bg-white outline-none text-sm font-bold transition-all flex items-center justify-between cursor-pointer"
+        className="w-full px-4 py-3 bg-slate-950 border border-slate-700/80 outline-none text-sm font-bold text-slate-100 transition-all flex items-center justify-between cursor-pointer"
       >
         <span className="truncate">{value || placeholder}</span>
         <ChevronDown className={cn("w-4 h-4 opacity-40 transition-transform flex-shrink-0", isOpen && "rotate-180")} />
@@ -439,17 +527,17 @@ function SearchableSelect({ label, value, options, onChange, placeholder = "Sele
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="absolute top-full left-0 w-full bg-white border border-[#141414] mt-1 z-50 shadow-2xl max-h-64 flex flex-col"
+            className="absolute top-full left-0 w-full bg-slate-950 border border-slate-700/80 mt-1 z-50 shadow-2xl max-h-64 flex flex-col rounded-3xl overflow-hidden"
           >
-            <div className="p-2 border-b border-gray-100">
+            <div className="p-2 border-b border-slate-700/80">
               <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
                 <input 
                   type="text"
                   placeholder="Filter categories..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="w-full pl-7 pr-3 py-2 bg-gray-50 border border-gray-100 outline-none text-[10px] font-mono focus:border-[#141414]"
+                  className="w-full pl-7 pr-3 py-2 bg-slate-950 border border-slate-700/80 outline-none text-[10px] font-mono text-slate-100 focus:border-cyan-400"
                   autoFocus
                   onClick={(e) => e.stopPropagation()}
                 />
@@ -466,8 +554,8 @@ function SearchableSelect({ label, value, options, onChange, placeholder = "Sele
                       setSearch('');
                     }}
                     className={cn(
-                      "px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors border-l-2 border-transparent",
-                      value === opt && "bg-gray-100 border-[#141414]"
+                      "px-4 py-3 cursor-pointer hover:bg-slate-900 transition-colors border-l-2 border-transparent",
+                      value === opt && "bg-slate-900 border-cyan-400/50"
                     )}
                   >
                     {opt}

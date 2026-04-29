@@ -1,24 +1,486 @@
 @import "tailwindcss";
 
 @layer base {
+  :root {
+    color-scheme: dark;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-synthesis: none;
+    --bg: #07101c;
+    --bg-soft: #111827;
+    --bg-surface: rgba(15,23,42,0.88);
+    --bg-surface-soft: rgba(30,41,59,0.80);
+    --bg-surface-muted: rgba(15,23,42,0.72);
+    --bg-input: rgba(15,23,42,0.84);
+    --bg-strong: rgba(14,20,35,0.92);
+    --text-primary: #e2e8f0;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+    --border: rgba(148,163,184,0.18);
+    --border-soft: rgba(148,163,184,0.12);
+    --shadow: 0 24px 80px rgba(15,23,42,0.24);
+  }
+
+  html {
+    min-height: 100%;
+  }
+
+  body {
+    min-height: 100vh;
+    background: radial-gradient(circle at top left, rgba(59,130,246,0.12), transparent 24%),
+      radial-gradient(circle at top right, rgba(16,185,129,0.08), transparent 18%),
+      linear-gradient(180deg, #07101c 0%, #0c1527 100%);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .app-shell {
+    min-height: 100vh;
+    background: radial-gradient(circle at top left, rgba(59,130,246,0.12), transparent 24%),
+      radial-gradient(circle at top right, rgba(16,185,129,0.08), transparent 18%),
+      linear-gradient(180deg, #07101c 0%, #0c1527 100%);
+    color: var(--text-primary);
+  }
+
+  .app-shell ::selection {
+    background: rgba(56,189,248,0.35);
+    color: #e2e8f0;
+  }
+
+  .theme-light .app-shell {
+    background: #f8fafc;
+    color: #0f172a;
+  }
+
+  .theme-light .app-shell ::selection {
+    background: rgba(56,189,248,0.18);
+    color: #0f172a;
+  }
+
+  .theme-light body {
+    background: linear-gradient(180deg, #f1f5f9 0%, #eef2ff 100%);
+    color: #0f172a;
+  }
+
+  .theme-light ::selection {
+    background: rgba(56,189,248,0.18);
+    color: #0f172a;
+  }
+
+  .theme-light input::placeholder,
+  .theme-light textarea::placeholder {
+    color: #6b7280 !important;
+    opacity: 1 !important;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  ::selection {
+    background: rgba(56,189,248,0.35);
+    color: #020617;
+  }
+
+  .glass-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(20px);
+  }
+
+  .theme-light .glass-card {
+    background: #ffffff;
+    border: 1px solid rgba(148,163,184,0.24);
+  }
+
+  .glass-card-strong {
+    background: var(--bg-strong);
+    border: 1px solid rgba(148,163,184,0.20);
+    backdrop-filter: blur(24px);
+  }
+
+  .theme-light .glass-card-strong {
+    background: #f8fafc;
+    border: 1px solid rgba(148,163,184,0.22);
+  }
+
+  .panel {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+  }
+
+  .panel-soft {
+    background: var(--bg-surface-soft);
+    border: 1px solid var(--border-soft);
+  }
+
+  .panel-muted {
+    background: var(--bg-surface-muted);
+    border: 1px solid rgba(148,163,184,0.10);
+  }
+
+  .panel-input {
+    background: var(--bg-input);
+    border: 1px solid rgba(71,85,105,0.7);
+    color: var(--text-primary);
+  }
+
+  .theme-light .panel {
+    background: #ffffff;
+    border: 1px solid rgba(148,163,184,0.18);
+  }
+
+  .theme-light .panel-soft {
+    background: #f8fafc;
+    border: 1px solid rgba(226,232,240,0.18);
+  }
+
+  .theme-light .panel-muted {
+    background: #eef2ff;
+    border: 1px solid rgba(226,232,240,0.18);
+  }
+
+  .theme-light .panel-input {
+    background: #ffffff;
+    border: 1px solid rgba(148,163,184,0.70);
+    color: #0f172a;
+  }
+
+  .theme-light [class*="text-slate-100"] {
+    color: #0f172a !important;
+  }
+
+  .theme-light [class*="text-white"] {
+    color: #0f172a !important;
+  }
+
+  .theme-light [class*="text-slate-50"] {
+    color: #0f172a !important;
+  }
+
+  .theme-light [class*="text-slate-200"] {
+    color: #334155 !important;
+  }
+
+  .theme-light [class*="text-slate-300"] {
+    color: #1f2937 !important;
+  }
+
+  .theme-light [class*="text-slate-400"] {
+    color: #1f2937 !important;
+  }
+
+  .theme-light [class*="text-slate-500"] {
+    color: #0f172a !important;
+  }
+
+  .theme-light [class*="text-slate-600"] {
+    color: #0f172a !important;
+  }
+
+  .theme-light [class*="text-slate-700"] {
+    color: #0f172a !important;
+  }
+
+  .theme-light [class*="text-slate-800"] {
+    color: #0f172a !important;
+  }
+
+  .theme-light [class*="text-gray-300"] {
+    color: #334155 !important;
+  }
+
+  .theme-light [class*="text-gray-400"] {
+    color: #334155 !important;
+  }
+
+  .theme-light [class*="text-gray-500"] {
+    color: #0f172a !important;
+  }
+
+  .theme-light [class*="text-gray-600"] {
+    color: #0f172a !important;
+  }
+
+  .theme-light [class*="text-gray-700"] {
+    color: #0f172a !important;
+  }
+
+  .theme-light [class*="text-gray-800"] {
+    color: #0f172a !important;
+  }
+  .theme-light [class*="text-yellow-800"] {
+    color: #78350f !important;
+  }
+
+  .theme-light [class*="text-emerald-600"] {
+    color: #047857 !important;
+  }
+
+  .theme-light [class*="text-red-600"] {
+    color: #b91c1c !important;
+  }
+  .theme-light [class*="text-emerald-300"] {
+    color: #047857 !important;
+  }
+
+  .theme-light [class*="text-emerald-400"] {
+    color: #065f46 !important;
+  }
+
+  .theme-light [class*="text-amber-400"] {
+    color: #92400e !important;
+  }
+
+  .theme-light [class*="text-red-400"] {
+    color: #991b1b !important;
+  }
+
+  .theme-light [class*="text-red-500"] {
+    color: #b91c1c !important;
+  }
+
+  .theme-light [class*="text-blue-500"] {
+    color: #1d4ed8 !important;
+  }
+
+  .theme-light [class*="text-blue-600"] {
+    color: #1d4ed8 !important;
+  }
+
+  .theme-light [class*="text-#E4E3E0"] {
+    color: #0f172a !important;
+  }
+
+  .theme-light [class*="opacity-40"] {
+    opacity: 0.72 !important;
+  }
+
+  .theme-light [class*="opacity-50"] {
+    opacity: 0.85 !important;
+  }
+
+  .theme-light [class*="bg-gray-100"] {
+    background-color: #e2e8f0 !important;
+  }
+
+  .theme-light [class*="bg-gray-200"] {
+    background-color: #cbd5e1 !important;
+  }
+
+  .theme-light [class*="border-gray-100"] {
+    border-color: rgba(148,163,184,0.35) !important;
+  }
+
+  .theme-light [class*="border-gray-200"] {
+    border-color: rgba(148,163,184,0.35) !important;
+  }
+
+  .theme-light [class*="hover:border-gray-400"]:hover {
+    border-color: rgba(148,163,184,0.55) !important;
+  }
+
+  .theme-light [class*="bg-emerald-50"] {
+    background-color: #ecfdf5 !important;
+  }
+
+  .theme-light [class*="bg-red-50"] {
+    background-color: #fef2f2 !important;
+  }
+
+  .theme-light [class*="bg-yellow-100"] {
+    background-color: #fef3c7 !important;
+  }
+
+  .theme-light [class*="border-[#141414]"] {
+    border-color: rgba(148,163,184,0.35) !important;
+  }
+
+  .theme-light [class*="bg-slate-950/70"] {
+    background-color: rgba(255,255,255,0.96) !important;
+  }
+
+  .theme-light [class*="bg-slate-950/80"] {
+    background-color: rgba(255,255,255,0.98) !important;
+  }
+
+  .theme-light [class*="bg-slate-950/90"] {
+    background-color: rgba(255,255,255,0.98) !important;
+  }
+
+  .theme-light [class*="bg-slate-950/"] {
+    background-color: rgba(255,255,255,0.98) !important;
+  }
+
+  .theme-light [class*="bg-slate-900/70"] {
+    background-color: rgba(248,250,252,0.95) !important;
+  }
+
+  .theme-light [class*="bg-slate-900/80"] {
+    background-color: rgba(248,250,252,0.95) !important;
+  }
+
+  .theme-light [class*="bg-slate-900/90"] {
+    background-color: rgba(248,250,252,0.95) !important;
+  }
+
+  .theme-light [class*="bg-slate-900/"] {
+    background-color: rgba(248,250,252,0.95) !important;
+  }
+
+  .theme-light [class*="bg-slate-800/"] {
+    background-color: rgba(238,242,255,0.95) !important;
+  }
+
+  .theme-light [class*="bg-slate-950"] {
+    background-color: #ffffff !important;
+  }
+
+  .theme-light [class*="bg-slate-900"] {
+    background-color: #f8fafc !important;
+  }
+
+  .theme-light [class*="bg-slate-800"] {
+    background-color: #eef2ff !important;
+  }
+
+  .theme-light [class*="bg-[#141414]"] {
+    background-color: #f8fafc !important;
+  }
+
+  .theme-light [class*="border-slate-700/"] {
+    border-color: rgba(148,163,184,0.35) !important;
+  }
+
+  .theme-light [class*="border-slate-700"] {
+    border-color: rgba(148,163,184,0.35) !important;
+  }
+
+  .theme-light [class*="border-slate-700"] {
+    border-color: rgba(148,163,184,0.35) !important;
+  }
+
+  .theme-light [class*="border-white/10"] {
+    border-color: rgba(148,163,184,0.2) !important;
+  }
+
+  .theme-light [class*="hover:bg-black"]:hover {
+    background-color: #cbd5e1 !important;
+  }
+
+  .theme-light .hover\:invert:hover {
+    filter: invert(0%) !important;
+  }
+
+  .theme-light .shadow-panel {
+    box-shadow: 0 20px 80px rgba(15,23,42,0.08);
+  }
+
+  .app-shell [class*="bg-[#141414]"] {
+    background-color: #111827 !important;
+  }
+
+  .app-shell [class*="bg-slate-950"] {
+    background-color: rgba(17,24,39,0.96) !important;
+  }
+
+  .app-shell [class*="bg-slate-900"] {
+    background-color: rgba(20,28,44,0.94) !important;
+  }
+
+  .app-shell [class*="bg-slate-800"] {
+    background-color: rgba(30,41,59,0.88) !important;
+  }
+
+  html:not(.theme-light) .app-shell [class*="text-white"] {
+    color: #e5e7eb !important;
+  }
+
+  html:not(.theme-light) .app-shell [class*="text-slate-100"] {
+    color: #eaedf4 !important;
+  }
+
+  .app-shell [class*="border-white/10"] {
+    border-color: rgba(148,163,184,0.18) !important;
+  }
+
+  .theme-light [class*="bg-slate-950"] {
+    background-color: rgba(255,255,255,0.96) !important;
+  }
+
+  .theme-light [class*="bg-slate-900"] {
+    background-color: rgba(248,250,252,0.95) !important;
+  }
+
+  .theme-light [class*="bg-slate-800"] {
+    background-color: rgba(241,245,249,0.95) !important;
+  }
+
+  .theme-light [class*="bg-[#141414]"] {
+    background-color: #f8fafc !important;
+  }
+
+  .theme-light [class*="border-slate-700"] {
+    border-color: rgba(148,163,184,0.35) !important;
+  }
+
+  .theme-light [class*="border-white/10"] {
+    border-color: rgba(148,163,184,0.2) !important;
+  }
+
+  .theme-light .shadow-panel {
+    box-shadow: 0 20px 80px rgba(15,23,42,0.08);
+  }
+
+  /* Make "important" UI text more prominent */
+  .app-shell h1,
+  .app-shell h2,
+  .app-shell h3,
+  .app-shell th,
+  .app-shell label {
+    font-weight: 900;
+    letter-spacing: -0.01em;
+  }
+
+  .theme-light .app-shell h1,
+  .theme-light .app-shell h2,
+  .theme-light .app-shell h3,
+  .theme-light .app-shell th,
+  .theme-light .app-shell label {
+    color: #0f172a !important;
+  }
+
+  /* Light UI table polish */
+  .theme-light .app-shell th {
+    background: #f8fafc;
+    border-bottom-color: rgba(148,163,184,0.35) !important;
+  }
+
+  /* Better visible focus ring across the app */
+  .app-shell :focus-visible {
+    outline: 2px solid rgba(6, 182, 212, 0.7);
+    outline-offset: 2px;
+  }
+
+  .shadow-panel {
+    box-shadow: 0 20px 80px rgba(15,23,42,0.25);
+  }
+
   @media print {
     @page {
       margin: 0;
       size: auto;
     }
 
-    /* Hide everything globally */
     body * {
       visibility: hidden !important;
     }
 
-    /* Show only the receipt content and its children */
-    #receipt-content, 
+    #receipt-content,
     #receipt-content * {
       visibility: visible !important;
     }
 
-    /* Position the receipt at the top of the paper */
     #receipt-content {
       position: absolute !important;
       left: 0 !important;
@@ -33,12 +495,10 @@
       color: black !important;
     }
 
-    /* Specifically hide UI components that might still be visible */
     .no-print {
       display: none !important;
     }
 
-    /* Exception for the receipt modal and its parents so the child stays visible */
     .receipt-modal-overlay,
     #receipt-wrapper {
       display: flex !important;
@@ -50,10 +510,17 @@
       position: static !important;
     }
 
-    /* Fix for dashed borders in some browsers during print */
     .border-dashed {
       border-style: dashed !important;
       border-bottom-width: 1px !important;
     }
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    background-image: linear-gradient(135deg, #7c3aed, #14b8a6);
+    -webkit-background-clip: text;
+    color: transparent;
   }
 }

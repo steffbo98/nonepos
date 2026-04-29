@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { collection, onSnapshot, addDoc, updateDoc, serverTimestamp, query, orderBy, doc, getDoc, increment } from 'firebase/firestore';
-import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
+// import { collection, onSnapshot, addDoc, updateDoc, serverTimestamp, query, orderBy, doc, getDoc, increment } from 'firebase/firestore';
+// import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase'; // Removed for desktop app
+import { getDataService } from '../lib/dataService';
+// import { useSyncStatus } from '../lib/syncManager'; // Removed for desktop app
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, ShoppingCart, CreditCard, Trash2, Plus, Minus, Wifi, WifiOff, CheckCircle2, X, MessageCircle, Scan, Package, LayoutGrid, List, Loader2, ChevronRight } from 'lucide-react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
@@ -25,6 +27,13 @@ interface Product {
 interface CartItem extends Product {
   quantity: number;
 }
+
+type LocalUser = {
+  uid: string;
+  email: string;
+  displayName?: string;
+  fullName?: string;
+};
 
 const CATEGORY_COLORS: Record<string, string> = {
   'All': 'bg-[#141414] text-white border-[#141414]',
@@ -60,7 +69,38 @@ const CATEGORY_ACCENTS: Record<string, string> = {
   'Other': 'border-t-slate-500'
 };
 
-export default function POSPage() {
+const CATEGORY_CHIP_BASE =
+  'px-4 py-2 text-[10px] font-bold tracking-widest border transition-colors whitespace-nowrap rounded-full';
+const CATEGORY_CHIP_INACTIVE = 'bg-slate-950 text-slate-100 border-slate-700 hover:border-cyan-400 hover:bg-slate-900';
+
+function getCategoryChipClasses(categoryName: string, isActive: boolean) {
+  if (!isActive) return CATEGORY_CHIP_INACTIVE;
+  if (categoryName === 'All') return `${CATEGORY_CHIP_BASE} bg-[#141414] text-white border-[#141414]`;
+  return `${CATEGORY_CHIP_BASE} ${CATEGORY_COLORS[categoryName] ?? 'bg-[#141414] text-white border-[#141414]'}`;
+}
+
+const CATEGORY_GRID_BADGE_BASE =
+  'px-2 py-0.5 inline-flex items-center rounded-full font-bold tracking-widest mb-2';
+const CATEGORY_LIST_BADGE_BASE =
+  'px-1.5 py-0.5 inline-flex items-center rounded-full font-bold tracking-tighter uppercase';
+
+function getCategoryGridBadgeClasses(categoryName: string) {
+  return cn(
+    CATEGORY_GRID_BADGE_BASE,
+    'text-[9px]',
+    CATEGORY_COLORS[categoryName] ?? 'bg-slate-800 text-slate-300 border-slate-700/60 border'
+  );
+}
+
+function getCategoryListBadgeClasses(categoryName: string) {
+  return cn(
+    CATEGORY_LIST_BADGE_BASE,
+    'text-[8px]',
+    CATEGORY_COLORS[categoryName] ?? 'bg-slate-800 text-slate-300 border-slate-700/60 border'
+  );
+}
+
+export default function POSPage({ user }: { user: LocalUser }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>(() => {
     const saved = localStorage.getItem('omnisync_cart');
@@ -91,6 +131,8 @@ export default function POSPage() {
   const [availableCategories, setAvailableCategories] = useState<string[]>(['All', 'General']);
   const barcodeBuffer = useRef('');
   const lastKeyTime = useRef(0);
+  const dataService = getDataService();
+  const syncStatus = dataService.getSyncStatus();
 
   useEffect(() => {
     // Physical Barcode Scanner Listener
@@ -129,29 +171,32 @@ export default function POSPage() {
   }, [products]);
 
   useEffect(() => {
-    const docRef = doc(db, 'settings', 'business');
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        const type = (data.type || 'Retail Shop') as StorePurpose;
-        setSettings({
-          name: data.name || 'OMNISYNC POS',
-          address: data.address || 'Westlands Commercial Center, Nairobi',
-          pin: data.pin || 'P051234567Z',
-          phone: data.phone || '+254 700 000 000',
-          type: type,
-          logoUrl: data.logoUrl || ''
-        });
-        
-        if (BUSINESS_TYPES[type]) {
-          setAvailableCategories(['All', ...BUSINESS_TYPES[type]]);
-        }
-      }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, 'settings/business');
-    });
+    // Load business settings using data service
+    const loadSettings = async () => {
+      try {
+        const setting = await dataService.getSetting('business');
+        if (setting) {
+          const data = JSON.parse(setting.value);
+          const type = (data.type || 'Retail Shop') as StorePurpose;
+          setSettings({
+            name: data.name || 'OMNISYNC POS',
+            address: data.address || 'Westlands Commercial Center, Nairobi',
+            pin: data.pin || 'P051234567Z',
+            phone: data.phone || '+254 700 000 000',
+            type: type,
+            logoUrl: data.logoUrl || ''
+          });
 
-    return () => unsubscribe();
+          if (BUSINESS_TYPES[type]) {
+            setAvailableCategories(['All', ...BUSINESS_TYPES[type]]);
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to load business settings:', error);
+      }
+    };
+
+    loadSettings();
   }, []);
 
   useEffect(() => {
@@ -177,22 +222,36 @@ export default function POSPage() {
     }
   }, [showCameraScanner, products]);
 
+  // Update online status based on sync manager
   useEffect(() => {
-    const q = query(collection(db, 'products'), orderBy('name'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const prods = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
-      setProducts(prods);
-      setHasPendingSync(snapshot.metadata.hasPendingWrites);
-      
-      // If empty, add some mock data (Admin only usually, but for demo...)
-      if (prods.length === 0) {
-        seedMockProducts();
+    setIsOnline(syncStatus.isOnline);
+    setHasPendingSync(syncStatus.pendingChanges > 0);
+  }, [syncStatus]);
+
+  useEffect(() => {
+    // Load products using data service
+    const loadProducts = async () => {
+      try {
+        const prods = await dataService.listProducts();
+        setProducts(prods);
+
+        // If empty, add some mock data
+        if (prods.length === 0) {
+          seedMockProducts();
+        }
+      } catch (error) {
+        console.error('Failed to load products:', error);
       }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'products');
+    };
+
+    loadProducts();
+
+    // Subscribe to real-time updates
+    const unsubscribe = dataService.subscribeToProducts((prods) => {
+      setProducts(prods);
     });
 
-    return () => unsubscribe();
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -226,10 +285,10 @@ export default function POSPage() {
     ];
     try {
       for (const p of mock) {
-        await addDoc(collection(db, 'products'), p);
+        await dataService.createProduct(p);
       }
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'products');
+      console.error('Failed to seed mock products:', error);
     }
   };
 
@@ -265,11 +324,24 @@ export default function POSPage() {
   const [isCreditSale, setIsCreditSale] = useState(false);
 
   useEffect(() => {
-    const q = query(collection(db, 'customers'), orderBy('name', 'asc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setCustomers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-    return () => unsubscribe();
+    let cancelled = false;
+
+    const loadCustomers = async () => {
+      try {
+        const list = await dataService.listCustomers();
+        if (!cancelled) {
+          setCustomers(list);
+        }
+      } catch (error) {
+        console.error('Failed to load customers:', error);
+      }
+    };
+
+    loadCustomers();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -277,12 +349,28 @@ export default function POSPage() {
   const total = subtotal + vat;
   const totalPaid = Number(((parseFloat(cashRecv) || 0) + (parseFloat(mpesaRecv) || 0)).toFixed(2));
 
+  const getPaymentMethod = () => {
+    const cash = parseFloat(cashRecv) || 0;
+    const mpesa = parseFloat(mpesaRecv) || 0;
+
+    if (isCreditSale) {
+      if (cash > 0 || mpesa > 0) return 'Partial Credit';
+      return 'Credit';
+    }
+
+    if (cash > 0 && mpesa > 0) return 'Mixed';
+    if (mpesa > 0) return 'M-Pesa';
+    return 'Cash';
+  };
+
   const handleCheckout = async (methodOverride?: string) => {
     if (cart.length === 0) return;
 
     // Use toFixed to avoid floating point precision issues during comparison
     const roundedTotal = Number(total.toFixed(2));
     const roundedPaid = Number(totalPaid.toFixed(2));
+    const changeDue = !isCreditSale ? Math.max(0, Number((roundedPaid - roundedTotal).toFixed(2))) : 0;
+    const creditAmount = isCreditSale ? Math.max(0, Number((roundedTotal - roundedPaid).toFixed(2))) : 0;
     
     if (!isCreditSale && roundedPaid < roundedTotal) {
       alert(`Insufficient payment. Total is Ksh ${roundedTotal.toLocaleString()}. You have entered Ksh ${roundedPaid.toLocaleString()}.`);
@@ -302,42 +390,68 @@ export default function POSPage() {
     setProcessing(true);
     try {
       const orderData = {
-        staffId: auth.currentUser?.uid,
+        staffId: user.uid,
         items: [...cart],
         subtotal: subtotal,
         vat: vat,
         totalAmount: total,
+        paymentMethod: getPaymentMethod(),
+        amountPaid: roundedPaid,
+        changeDue,
+        creditAmount,
         cashPaid: parseFloat(cashRecv) || 0,
         mpesaPaid: parseFloat(mpesaRecv) || 0,
         mpesaRef: mpesaRefCode,
         isCredit: isCreditSale,
         customerId: selectedCustomerId || null,
-        paymentStatus: 'completed',
+        paymentStatus: creditAmount > 0 ? 'credit' : 'completed',
         orderStatus: 'completed',
-        createdAt: serverTimestamp()
+        createdAt: new Date().toISOString()
       };
 
-      const docRef = await addDoc(collection(db, 'orders'), orderData);
-      
-      // Update inventory and customer data using increment (Atomic & Offline-Ready)
+      // Create order using data service (works offline)
+      const createdOrder = await dataService.createOrder(orderData);
+
+      // Update inventory using data service
       for (const item of cart) {
-        const pRef = doc(db, 'products', item.id);
-        await updateDoc(pRef, { stock: increment(-item.quantity) });
+        const currentProduct = products.find(p => p.id === item.id);
+        if (currentProduct) {
+          const stockAfter = Math.max(0, currentProduct.stock - item.quantity);
+          await dataService.updateProduct(item.id, {
+            stock: stockAfter
+          });
+          await dataService.recordStockMovement(item.id, {
+            orderId: createdOrder.id,
+            type: 'sale',
+            quantityChange: -item.quantity,
+            stockAfter,
+            note: `Sale ${createdOrder.id.slice(0, 8).toUpperCase()}`
+          });
+        }
       }
 
+      // Update customer data if applicable
       if (selectedCustomerId) {
-        const cRef = doc(db, 'customers', selectedCustomerId);
-        const pointsEarned = Math.floor(total / 100);
-        const extraDebt = isCreditSale ? (total - totalPaid) : 0;
-        
-        await updateDoc(cRef, {
-          points: increment(pointsEarned),
-          debt: increment(extraDebt),
-          updatedAt: serverTimestamp()
-        });
+        const customer = await dataService.getCustomer(selectedCustomerId);
+        if (customer) {
+          const pointsEarned = Math.floor(total / 100);
+
+          await dataService.updateCustomer(selectedCustomerId, {
+            points: (customer.points || 0) + pointsEarned,
+            updatedAt: new Date().toISOString()
+          });
+
+          if (creditAmount > 0) {
+            await dataService.recordCustomerDebt(selectedCustomerId, {
+              amount: creditAmount,
+              orderId: createdOrder.id,
+              note: `Credit sale ${createdOrder.id.slice(0, 8).toUpperCase()}`
+            });
+          }
+        }
       }
 
-      setLastOrder({ id: docRef.id, ...orderData, timestamp: new Date() });
+      setLastOrder({ id: createdOrder.id, ...orderData, timestamp: new Date() });
       setCart([]);
       setCashRecv('');
       setMpesaRecv('');
@@ -349,8 +463,8 @@ export default function POSPage() {
       setTimeout(() => setOrderSuccess(false), 3000);
     } catch (error) {
       console.error('Checkout error:', error);
-      alert("A transaction error occurred. Please check your internet connection or try again.");
-      handleFirestoreError(error, OperationType.WRITE, 'orders');
+      const message = error instanceof Error ? error.message : 'A transaction error occurred. Please check the local database and try again.';
+      alert(message);
     } finally {
       setProcessing(false);
     }
@@ -360,18 +474,20 @@ export default function POSPage() {
     e.preventDefault();
     if (!newCustomer.name || !newCustomer.phone) return;
     try {
-      const docRef = await addDoc(collection(db, 'customers'), {
+      const customerData = {
         ...newCustomer,
         debt: 0,
         points: 0,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
-      setSelectedCustomerId(docRef.id);
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      const createdCustomer = await dataService.createCustomer(customerData);
+      setSelectedCustomerId(createdCustomer.id);
       setIsAddingCustomer(false);
       setNewCustomer({ name: '', phone: '' });
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'customers');
+      console.error('Failed to create customer:', error);
     }
   };
 
@@ -395,11 +511,11 @@ export default function POSPage() {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white w-full max-w-sm p-8 shadow-2xl relative border border-[#141414]"
+              className="panel rounded-[2rem] w-full max-w-sm p-8 shadow-2xl relative border border-slate-700/80"
             >
               <button 
                 onClick={() => setIsAddingCustomer(false)}
-                className="absolute top-4 right-4 p-2 hover:bg-gray-100 transition-colors rounded-full"
+                className="absolute top-4 right-4 p-2 hover:bg-slate-800 transition-colors rounded-full"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -412,7 +528,7 @@ export default function POSPage() {
                     type="text" 
                     value={newCustomer.name}
                     onChange={(e) => setNewCustomer(prev => ({ ...prev, name: e.target.value }))}
-                    className="w-full px-4 py-2 border border-[#141414] outline-none font-bold text-xs"
+                    className="w-full px-4 py-2 bg-slate-950 border border-slate-700 outline-none font-bold text-xs text-slate-100"
                     placeholder="e.g. John Doe"
                   />
                 </div>
@@ -423,7 +539,7 @@ export default function POSPage() {
                     type="tel" 
                     value={newCustomer.phone}
                     onChange={(e) => setNewCustomer(prev => ({ ...prev, phone: e.target.value }))}
-                    className="w-full px-4 py-2 border border-[#141414] outline-none font-bold text-xs"
+                    className="w-full px-4 py-2 bg-slate-950 border border-slate-700 outline-none font-bold text-xs text-slate-100"
                     placeholder="e.g. 07XXXXXXXX"
                   />
                 </div>
@@ -448,16 +564,16 @@ export default function POSPage() {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white w-full max-w-sm p-8 shadow-2xl relative border border-[#141414]"
+              className="panel rounded-[2rem] w-full max-w-sm p-8 shadow-2xl relative border border-slate-700/80"
             >
               <button 
                 onClick={() => setShowReceipt(false)}
-                className="absolute top-4 right-4 p-2 hover:bg-gray-100 transition-colors rounded-full"
+                className="absolute top-4 right-4 p-2 hover:bg-slate-800 transition-colors rounded-full"
               >
                 <X className="w-4 h-4" />
               </button>
 
-              <div id="receipt-content" className="font-mono text-xs tracking-tight text-[#141414]">
+              <div id="receipt-content" className="font-mono text-xs tracking-tight text-slate-100">
                 <div className="text-center mb-6 flex flex-col items-center">
                   {settings.logoUrl && (
                     <div className="w-16 h-16 mb-4 overflow-hidden flex items-center justify-center">
@@ -473,7 +589,7 @@ export default function POSPage() {
                   <p className="opacity-60 text-[10px]">Tel: {settings.phone}</p>
                 </div>
 
-                <div className="border-y border-dashed border-gray-300 py-4 mb-4 space-y-1">
+                <div className="border-y border-dashed border-slate-700 py-4 mb-4 space-y-1">
                   <div className="flex justify-between">
                     <span>{lastOrder.isCredit ? 'Invoice' : 'Receipt'} #:</span>
                     <span>{(lastOrder.transactionId || lastOrder.id)?.slice(-6).toUpperCase()}</span>
@@ -484,7 +600,7 @@ export default function POSPage() {
                   </div>
                   <div className="flex justify-between">
                     <span>Cashier:</span>
-                    <span>{auth.currentUser?.email?.split('@')[0]}</span>
+                    <span>{(user.displayName || user.fullName || user.email).split('@')[0]}</span>
                   </div>
                 </div>
 
@@ -517,7 +633,7 @@ export default function POSPage() {
 
                 <div className="mt-8 text-center opacity-50 space-y-1">
                   {lastOrder.customerId && (
-                    <p className="font-bold border-b border-gray-100 pb-2 mb-2 uppercase tracking-tighter">
+                    <p className="font-bold border-b border-slate-700 pb-2 mb-2 uppercase tracking-tighter">
                       Customer: {customers.find(c => c.id === lastOrder.customerId)?.name || 'Member'}
                     </p>
                   )}
@@ -541,7 +657,7 @@ export default function POSPage() {
               <div className="mt-8 grid grid-cols-2 gap-4 no-print">
                 <button 
                   onClick={() => setShowReceipt(false)}
-                  className="py-3 px-4 border border-[#141414] font-bold text-[10px] tracking-widest hover:bg-gray-50"
+                  className="py-3 px-4 rounded-3xl border border-[#141414] font-bold text-[10px] tracking-widest hover:bg-slate-900"
                 >
                   Close
                 </button>
@@ -562,24 +678,18 @@ export default function POSPage() {
         <header className="flex flex-col sm:flex-row gap-4 items-center justify-between">
           <div className="relative w-full sm:w-96 flex gap-2">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input 
                 type="text" 
                 placeholder="Search products..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-white border border-[#141414] focus:ring-1 focus:ring-[#141414] outline-none text-sm font-mono"
+                className="w-full rounded-3xl pl-10 pr-4 py-3 panel-input text-slate-100 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/10 outline-none text-sm font-mono"
               />
-              {hasPendingSync && (
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                  <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />
-                  <span className="text-[8px] font-bold uppercase opacity-40">Syncing...</span>
-                </div>
-              )}
             </div>
             <button 
               onClick={() => setShowCameraScanner(!showCameraScanner)}
-              className="p-3 border border-[#141414] hover:bg-gray-50 transition-colors"
+              className="p-3 border border-[#141414] hover:bg-slate-900 transition-colors"
               title="Camera Scanner"
             >
               <Scan className="w-5 h-5" />
@@ -589,7 +699,7 @@ export default function POSPage() {
                 onClick={() => setViewMode('grid')}
                 className={cn(
                   "p-3 transition-colors",
-                  viewMode === 'grid' ? "bg-[#141414] text-white" : "bg-white text-[#141414] hover:bg-gray-50"
+                  viewMode === 'grid' ? "bg-[#141414] text-white" : "bg-slate-900 text-slate-100 hover:bg-slate-800"
                 )}
                 title="Grid View"
               >
@@ -599,7 +709,7 @@ export default function POSPage() {
                 onClick={() => setViewMode('list')}
                 className={cn(
                   "p-3 border-l border-[#141414] transition-colors",
-                  viewMode === 'list' ? "bg-[#141414] text-white" : "bg-white text-[#141414] hover:bg-gray-50"
+                  viewMode === 'list' ? "bg-[#141414] text-white" : "bg-slate-900 text-slate-100 hover:bg-slate-800"
                 )}
                 title="List View"
               >
@@ -608,49 +718,35 @@ export default function POSPage() {
             </div>
           </div>
           <div className="flex gap-2 w-full sm:w-auto overflow-x-auto pb-2 sm:pb-0 scrollbar-hide">
-            {availableCategories.map(cat => (
-              <button
-                key={cat}
-                onClick={() => setCategory(cat)}
-                className={cn(
-                  "px-4 py-2 text-[10px] font-bold tracking-widest border transition-all whitespace-nowrap",
-                  category === cat 
-                    ? (CATEGORY_COLORS[cat as string] || "bg-[#141414] text-white border-[#141414]") 
-                    : (CATEGORY_COLORS[cat as string]?.replace('bg-', 'hover:bg-').replace('text-', 'hover:text-') || "bg-white text-[#141414] border-gray-200 hover:border-[#141414]")
-                )}
-              >
-                {cat}
-              </button>
-            ))}
+            {availableCategories.map((cat) => {
+              const isActive = category === cat;
+              return (
+                <button
+                  key={cat}
+                  onClick={() => setCategory(cat)}
+                  aria-pressed={isActive}
+                  className={getCategoryChipClasses(cat, isActive)}
+                >
+                  {cat}
+                </button>
+              );
+            })}
           </div>
         </header>
+
+        {/* Local database status */}
+        <div className="flex items-center justify-center gap-2 px-3 py-2 panel-soft rounded-full text-xs font-mono max-w-fit border border-slate-700/80">
+          <Wifi className="w-3 h-3 text-emerald-400" />
+          <span className="text-emerald-300">Local DB Ready</span>
+        </div>
 
         {showCameraScanner && (
           <motion.div 
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
-            className="bg-white border-2 border-[#141414] p-4 mb-4"
+            className="panel rounded-[1.5rem] border border-slate-700/70 p-4 mb-4 shadow-panel"
           >
             <div id="pos-scanner"></div>
-          </motion.div>
-        )}
-
-        {!isOnline && (
-          <motion.div 
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-amber-50 border-2 border-amber-400 p-4 mb-4 flex items-center gap-4 shadow-sm"
-          >
-            <div className="w-10 h-10 bg-amber-400 flex items-center justify-center rounded-sm text-white shrink-0">
-              <WifiOff className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="font-black text-xs uppercase tracking-tight text-amber-900">Hybrid Offline Mode Active</h3>
-              <p className="text-[10px] font-mono text-amber-700 leading-tight">
-                Your connection is unstable. You can still process sales and view products. 
-                All transactions will be saved locally and synchronized automatically when you are back online.
-              </p>
-            </div>
           </motion.div>
         )}
 
@@ -670,7 +766,7 @@ export default function POSPage() {
                 exit={{ opacity: 0, scale: 0.95 }}
                 onClick={() => addToCart(p)}
                 className={cn(
-                  "group relative bg-white border border-gray-100 cursor-pointer hover:border-[#141414] transition-all flex border-t-4",
+                  "group relative panel-soft border border-slate-700/70 cursor-pointer hover:border-cyan-400/80 transition-all flex border-t-4 text-slate-100",
                   CATEGORY_ACCENTS[p.category] || "border-t-[#141414]",
                   viewMode === 'grid' 
                     ? "flex-col justify-between p-4" 
@@ -680,7 +776,7 @@ export default function POSPage() {
                 {viewMode === 'grid' ? (
                   <>
                     <div className="mb-4">
-                      <div className="aspect-square bg-gray-50 border border-gray-100 mb-4 flex items-center justify-center overflow-hidden">
+                      <div className="aspect-square bg-slate-900 border border-slate-700 mb-4 flex items-center justify-center overflow-hidden">
                         {p.imageUrl ? (
                           <img 
                             src={p.imageUrl} 
@@ -692,17 +788,14 @@ export default function POSPage() {
                           <Package className="w-10 h-10 opacity-20" />
                         )}
                       </div>
-                      <p className={cn(
-                        "text-[9px] font-bold px-2 py-0.5 inline-block mb-2",
-                        CATEGORY_COLORS[p.category] || "bg-gray-100 text-gray-800"
-                      )}>
+                      <span className={getCategoryGridBadgeClasses(p.category)}>
                         {p.category}
-                      </p>
+                      </span>
                       <h3 className="font-bold text-sm leading-tight group-hover:underline underline-offset-4">{p.name}</h3>
                     </div>
                     <div className="flex items-end justify-between">
                       <p className="font-mono font-bold text-sm">Ksh {p.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                      <div className="p-1 border border-gray-100 group-hover:border-[#141414] transition-colors rounded">
+                      <div className="p-1 border border-slate-700/70 group-hover:border-cyan-400 transition-colors rounded">
                         <Plus className="w-4 h-4" />
                       </div>
                     </div>
@@ -714,7 +807,7 @@ export default function POSPage() {
                   </>
                 ) : (
                   <>
-                    <div className="w-12 h-12 bg-gray-50 border border-gray-100 flex-shrink-0 flex items-center justify-center overflow-hidden">
+                    <div className="w-12 h-12 bg-slate-900 border border-slate-700/70 flex-shrink-0 flex items-center justify-center overflow-hidden">
                       {p.imageUrl ? (
                         <img 
                           src={p.imageUrl} 
@@ -729,10 +822,7 @@ export default function POSPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
                         <h3 className="font-bold text-sm truncate">{p.name}</h3>
-                        <span className={cn(
-                          "text-[8px] font-bold px-1.5 py-0.5 tracking-tighter uppercase",
-                          CATEGORY_COLORS[p.category] || "bg-gray-100 text-gray-800"
-                        )}>
+                        <span className={getCategoryListBadgeClasses(p.category)}>
                           {p.category}
                         </span>
                       </div>
@@ -746,7 +836,7 @@ export default function POSPage() {
                             {p.stock} LEFT
                           </span>
                         )}
-                        <div className="p-1 border border-gray-100 group-hover:border-[#141414] transition-colors rounded bg-white">
+                        <div className="p-1 border border-slate-700/70 group-hover:border-cyan-400 transition-colors rounded bg-slate-900">
                           <Plus className="w-3 h-3" />
                         </div>
                       </div>
@@ -760,17 +850,17 @@ export default function POSPage() {
       </div>
 
       {/* Right Column: Cart & Checkout */}
-      <aside className="lg:col-span-4 flex flex-col bg-white border border-[#141414] relative">
-        <div className="absolute top-0 left-0 w-full h-1 bg-[#141414]" />
+      <aside className="lg:col-span-4 flex flex-col panel rounded-[2rem] border border-slate-700/80 relative overflow-hidden shadow-panel">
+        <div className="absolute top-0 left-0 w-full h-1 bg-cyan-400/60" />
         
-        <header className="p-6 border-bottom border-gray-100 flex items-center justify-between">
+        <header className="p-6 border-b border-slate-700 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <ShoppingCart className="w-5 h-5" />
             <h2 className="font-black tracking-tighter text-xl">Current Order</h2>
           </div>
-          {isOnline ? (
+          {true ? (
             <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-600">
-              <Wifi className="w-3 h-3" /> Online
+              <Wifi className="w-3 h-3" /> Local DB
             </div>
           ) : (
             <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-600">
@@ -795,7 +885,7 @@ export default function POSPage() {
                   exit={{ opacity: 0, x: -20 }}
                   className="flex gap-4 group items-center"
                 >
-                  <div className="w-10 h-10 bg-gray-50 border border-gray-100 flex-shrink-0 flex items-center justify-center overflow-hidden">
+                  <div className="w-10 h-10 bg-slate-900 border border-slate-700/70 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-2xl">
                     {item.imageUrl ? (
                       <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                     ) : (
@@ -804,16 +894,16 @@ export default function POSPage() {
                   </div>
                   <div className="flex-1 min-w-0 pr-2">
                     <h4 className="font-bold text-[11px] leading-tight truncate">{item.name}</h4>
-                    <p className="text-[10px] font-mono font-bold text-gray-400">Ksh {item.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                    <p className="text-[10px] font-mono font-bold text-slate-400">Ksh {item.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <div className="flex items-center border border-gray-100 bg-white scale-90">
-                      <button onClick={() => updateQuantity(item.id, -1)} className="p-1.5 hover:bg-gray-100"><Minus className="w-2.5 h-2.5" /></button>
+                    <div className="flex items-center border border-slate-700/70 bg-slate-900 scale-90 rounded-lg overflow-hidden">
+                      <button onClick={() => updateQuantity(item.id, -1)} className="p-1.5 hover:bg-slate-800"><Minus className="w-2.5 h-2.5" /></button>
                       <span className="w-6 text-center text-[10px] font-mono font-bold">{item.quantity}</span>
-                      <button onClick={() => updateQuantity(item.id, 1)} className="p-1.5 hover:bg-gray-100"><Plus className="w-2.5 h-2.5" /></button>
+                      <button onClick={() => updateQuantity(item.id, 1)} className="p-1.5 hover:bg-slate-800"><Plus className="w-2.5 h-2.5" /></button>
                     </div>
                     <p className="w-[60px] text-right font-mono text-[11px] font-black tracking-tighter">{(item.price * item.quantity).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                    <button onClick={() => removeFromCart(item.id)} className="text-gray-300 hover:text-red-500 transition-colors p-1 ml-1">
+                    <button onClick={() => removeFromCart(item.id)} className="text-slate-300 hover:text-rose-400 transition-colors p-1 ml-1 rounded-full hover:bg-slate-900">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -823,14 +913,14 @@ export default function POSPage() {
           </AnimatePresence>
         </div>
 
-        <footer className="p-6 border-t-2 border-[#141414] bg-gray-50 flex flex-col gap-6">
+        <footer className="p-6 border-t-2 border-slate-700 bg-slate-950 flex flex-col gap-6">
           <div className="space-y-4">
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
                 <label className="text-[10px] font-bold uppercase tracking-widest opacity-50">Select Customer (Opt)</label>
                 <button 
                   onClick={() => setIsAddingCustomer(true)}
-                  className="text-[10px] font-bold text-blue-600 hover:underline flex items-center gap-1"
+                  className="text-[10px] font-bold text-cyan-300 hover:text-cyan-200 transition-colors flex items-center gap-1"
                 >
                   <Plus className="w-3 h-3" /> Quick Add
                 </button>
@@ -838,7 +928,7 @@ export default function POSPage() {
               <select 
                 value={selectedCustomerId}
                 onChange={(e) => setSelectedCustomerId(e.target.value)}
-                className="w-full px-4 py-2 bg-white border border-gray-100 outline-none focus:border-[#141414] text-xs font-bold"
+                className="w-full px-4 py-2 bg-slate-950 border border-slate-700 outline-none focus:border-cyan-400 text-xs font-bold text-slate-100"
               >
                 <option value="">Walk-in Customer</option>
                 {customers.map(c => (
@@ -855,8 +945,8 @@ export default function POSPage() {
                   onChange={(e) => setIsCreditSale(e.target.checked)}
                   className="sr-only peer"
                 />
-                <div className="w-10 h-5 bg-gray-200 rounded-full peer peer-checked:bg-[#141414] transition-colors"></div>
-                <div className="absolute left-1 top-1 w-3 h-3 bg-white rounded-full transition-transform peer-checked:translate-x-5"></div>
+                <div className="w-10 h-5 bg-slate-700 rounded-full peer peer-checked:bg-cyan-400 transition-colors"></div>
+                <div className="absolute left-1 top-1 w-3 h-3 bg-slate-100 rounded-full transition-transform peer-checked:translate-x-5"></div>
               </div>
               <span className="text-[10px] font-bold uppercase tracking-widest opacity-60 group-hover:opacity-100">Sell on Credit</span>
             </label>
@@ -870,7 +960,7 @@ export default function POSPage() {
                 placeholder="0.00"
                 value={cashRecv}
                 onChange={(e) => setCashRecv(e.target.value)}
-                className="w-full px-4 py-2 bg-white border border-gray-100 font-mono text-xs font-bold"
+                className="w-full px-4 py-2 bg-slate-950 border border-slate-700 font-mono text-xs font-bold text-slate-100"
               />
             </div>
             <div className="flex flex-col gap-1.5">
@@ -880,7 +970,7 @@ export default function POSPage() {
                 placeholder="0.00"
                 value={mpesaRecv}
                 onChange={(e) => setMpesaRecv(e.target.value)}
-                className="w-full px-4 py-2 bg-white border border-gray-100 font-mono text-xs font-bold"
+                className="w-full px-4 py-2 bg-slate-950 border border-slate-700 font-mono text-xs font-bold text-slate-100"
               />
             </div>
           </div>
@@ -893,12 +983,12 @@ export default function POSPage() {
                 placeholder="REG0000000"
                 value={mpesaRefCode}
                 onChange={(e) => setMpesaRefCode(e.target.value)}
-                className="w-full px-4 py-2 bg-white border border-gray-100 font-mono text-xs font-bold uppercase"
+                className="w-full px-4 py-2 bg-slate-950 border border-slate-700 font-mono text-xs font-bold uppercase text-slate-100"
               />
             </div>
           )}
 
-          <div className="space-y-2 py-4 border-t border-gray-200">
+          <div className="space-y-2 py-4 border-t border-slate-700">
             <div className="flex justify-between text-xs font-mono opacity-60">
               <span>Grand Total</span>
               <span>Ksh {total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
@@ -908,13 +998,13 @@ export default function POSPage() {
               <span className={cn(totalPaid >= total ? "text-emerald-600 font-bold" : "")}>Ksh {totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
             </div>
             {!isCreditSale && totalPaid > total && (
-              <div className="flex justify-between text-xs font-mono text-blue-600 font-bold bg-blue-50 p-2 border border-blue-100">
+              <div className="flex justify-between text-xs font-mono text-blue-300 font-bold bg-slate-900 p-2 border border-slate-700">
                 <span>Change Ready</span>
                 <span>Ksh {(totalPaid - total).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
               </div>
             )}
             {isCreditSale && totalPaid < total && (
-              <div className="flex justify-between text-xs font-mono text-red-600 font-bold bg-red-50 p-2 border border-red-100">
+              <div className="flex justify-between text-xs font-mono text-rose-300 font-bold bg-slate-900 p-2 border border-slate-700">
                 <span>Credit Amount</span>
                 <span>Ksh {(total - totalPaid).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
               </div>
@@ -924,7 +1014,7 @@ export default function POSPage() {
           <button 
             disabled={cart.length === 0 || processing || (!isCreditSale && Number(totalPaid.toFixed(2)) < Number(total.toFixed(2)))}
             onClick={() => handleCheckout()}
-            className="w-full bg-[#141414] text-[#E4E3E0] py-4 font-black tracking-widest text-xs hover:invert transition-all disabled:opacity-20 flex items-center justify-center gap-2"
+            className="w-full rounded-3xl bg-[#141414] text-[#E4E3E0] py-4 font-black tracking-widest text-xs hover:invert transition-all disabled:opacity-20 flex items-center justify-center gap-2"
           >
             {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <ChevronRight className="w-4 h-4" />}
             {isCreditSale ? 'CONFIRM CREDIT SALE' : 'COMPLETE TRANSACTION'}

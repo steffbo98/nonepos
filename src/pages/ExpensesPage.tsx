@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+// import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
+// import { db, handleFirestoreError, OperationType } from '../lib/firebase'; // Removed for desktop app
+import { getDataService } from '../lib/dataService';
 import { motion, AnimatePresence } from 'motion/react';
 import { Wallet, Plus, Trash2, ArrowUpCircle, ArrowDownCircle, Search, Calendar, Tag } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
@@ -22,6 +23,7 @@ interface Expense {
 
 export default function ExpensesPage() {
   const { isAdmin } = useUserProfile();
+  const dataService = getDataService();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [search, setSearch] = useState('');
   const [formData, setFormData] = useState({ description: '', amount: 0, category: 'Utilities' });
@@ -29,38 +31,45 @@ export default function ExpensesPage() {
 
   const CATEGORIES = ['Utilities', 'Rent', 'Salaries', 'Purchases', 'Transport', 'Marketing', 'Maintenance', 'Tax', 'Other'];
 
+  const loadExpenses = async () => {
+    try {
+      const data = await dataService.listExpenses();
+      setExpenses(data);
+    } catch (error) {
+      console.error('Failed to load expenses:', error);
+    }
+  };
+
   useEffect(() => {
-    const q = query(collection(db, 'expenses'), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setExpenses(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Expense)));
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'expenses');
-    });
-    return () => unsubscribe();
+    loadExpenses();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await addDoc(collection(db, 'expenses'), {
+      const created = await dataService.createExpense({
         ...formData,
         amount: Number(formData.amount),
-        date: serverTimestamp(),
-        createdAt: serverTimestamp(),
+        date: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
       });
+      setExpenses(prev => [created, ...prev]);
       setFormData({ description: '', amount: 0, category: 'Utilities' });
       setIsAdding(false);
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, 'expenses');
+      console.error('Failed to save expense:', error);
+      alert(error instanceof Error ? error.message : 'Failed to save expense');
     }
   };
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Delete this expense?')) return;
     try {
-      await deleteDoc(doc(db, 'expenses', id));
+      await dataService.deleteExpense(id);
+      setExpenses(prev => prev.filter(expense => expense.id !== id));
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, 'expenses');
+      console.error('Failed to delete expense:', error);
+      alert(error instanceof Error ? error.message : 'Failed to delete expense');
     }
   };
 
@@ -76,10 +85,10 @@ export default function ExpensesPage() {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-4xl font-black tracking-tighter uppercase mb-2">Expenses</h1>
-          <p className="text-gray-500 font-medium">Track your business overheads and spending.</p>
+          <p className="text-slate-400 font-medium">Track your business overheads and spending.</p>
         </div>
         <div className="flex items-center gap-4">
-          <div className="bg-white border-2 border-[#141414] p-4 flex items-center gap-4">
+          <div className="panel-soft rounded-[2rem] border border-slate-700/80 p-4 flex items-center gap-4">
             <Wallet className="w-8 h-8 opacity-20" />
             <div>
               <p className="text-[10px] font-bold opacity-40 uppercase tracking-widest">Total Outflow</p>
@@ -102,14 +111,14 @@ export default function ExpensesPage() {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="bg-white border-2 border-[#141414] p-8"
+            className="panel rounded-[2rem] border border-slate-700/80 p-8 shadow-panel"
           >
             <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-4 gap-6 items-end">
               <div className="md:col-span-2 space-y-2">
                 <label className="text-[10px] font-bold uppercase tracking-widest opacity-40">Description</label>
                 <input 
                   required
-                  className="w-full bg-gray-50 border border-gray-200 p-4 font-bold outline-none focus:border-[#141414]"
+                  className="w-full bg-slate-950 border border-slate-700/80 p-4 font-bold text-slate-100 outline-none focus:border-cyan-400"
                   value={formData.description}
                   onChange={e => setFormData({...formData, description: e.target.value})}
                   placeholder="e.g. Monthly Rent"
@@ -118,7 +127,7 @@ export default function ExpensesPage() {
               <div className="space-y-2">
                 <label className="text-[10px] font-bold uppercase tracking-widest opacity-40">Category</label>
                 <select 
-                  className="w-full bg-gray-50 border border-gray-200 p-4 font-bold outline-none focus:border-[#141414]"
+                  className="w-full bg-slate-950 border border-slate-700/80 p-4 font-bold text-slate-100 outline-none focus:border-cyan-400"
                   value={formData.category}
                   onChange={e => setFormData({...formData, category: e.target.value})}
                 >
@@ -130,7 +139,7 @@ export default function ExpensesPage() {
                 <input 
                   required
                   type="number"
-                  className="w-full bg-gray-50 border border-gray-200 p-4 font-mono font-bold outline-none focus:border-[#141414]"
+                  className="w-full bg-slate-950 border border-slate-700/80 p-4 font-mono font-bold text-slate-100 outline-none focus:border-cyan-400"
                   value={formData.amount || ''}
                   onChange={e => setFormData({...formData, amount: parseFloat(e.target.value)})}
                   placeholder="0.00"
@@ -156,12 +165,12 @@ export default function ExpensesPage() {
         )}
       </AnimatePresence>
 
-      <div className="bg-white border-2 border-[#141414] overflow-hidden">
-        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+      <div className="panel rounded-[2rem] border border-slate-700/80 overflow-hidden shadow-panel">
+        <div className="p-6 border-b border-slate-700/80 flex items-center justify-between">
           <div className="relative w-full max-w-md">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-20" />
             <input 
-              className="w-full bg-gray-50 border border-gray-200 pl-12 pr-4 py-3 text-sm outline-none focus:border-[#141414]"
+              className="w-full bg-slate-950 border border-slate-700/80 pl-12 pr-4 py-3 text-sm text-slate-100 outline-none focus:border-cyan-400"
               placeholder="Search expenses..."
               value={search}
               onChange={e => setSearch(e.target.value)}
@@ -171,22 +180,22 @@ export default function ExpensesPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
-              <tr className="bg-gray-50 border-b border-[#141414]">
+              <tr className="bg-slate-950/70 border-b border-slate-700/80">
                 <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest opacity-40">Date</th>
                 <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest opacity-40">Category</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest opacity-40 border-l border-gray-100">Description</th>
-                <th className="px-6 py-4 text-right text-[10px] font-bold uppercase tracking-widest opacity-40 border-l border-gray-100">Amount</th>
-                <th className="px-6 py-4 text-right text-[10px] font-bold uppercase tracking-widest opacity-40 border-l border-gray-100">Action</th>
+                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest opacity-40 border-l border-slate-700/80">Description</th>
+                <th className="px-6 py-4 text-right text-[10px] font-bold uppercase tracking-widest opacity-40 border-l border-slate-700/80">Amount</th>
+                <th className="px-6 py-4 text-right text-[10px] font-bold uppercase tracking-widest opacity-40 border-l border-slate-700/80">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 font-medium">
+            <tbody className="divide-y divide-slate-700/80 font-medium">
               {filteredExpenses.map(exp => (
-                <tr key={exp.id} className="hover:bg-gray-50 transition-colors">
+                <tr key={exp.id} className="hover:bg-slate-900 transition-colors">
                   <td className="px-6 py-4 text-xs opacity-60 font-mono">
-                    {exp.date?.toDate().toLocaleDateString() || 'Pending...'}
+                    {formatDate(exp.date || exp.createdAt)}
                   </td>
                   <td className="px-6 py-4">
-                    <span className="px-2 py-1 bg-gray-100 text-[10px] font-bold uppercase tracking-tight">
+                    <span className="px-2 py-1 bg-slate-800 text-[10px] font-bold uppercase tracking-tight text-slate-100">
                       {exp.category}
                     </span>
                   </td>
@@ -196,7 +205,7 @@ export default function ExpensesPage() {
                     {isAdmin && (
                       <button 
                         onClick={() => handleDelete(exp.id)}
-                        className="p-2 text-gray-400 hover:text-red-600 transition-colors"
+                        className="p-2 text-slate-400 hover:text-rose-400 transition-colors"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -206,7 +215,7 @@ export default function ExpensesPage() {
               ))}
               {filteredExpenses.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-6 py-20 text-center text-gray-400 italic">No expenses found matching your search.</td>
+                  <td colSpan={5} className="px-6 py-20 text-center text-slate-400 italic">No expenses found matching your search.</td>
                 </tr>
               )}
             </tbody>
@@ -215,4 +224,10 @@ export default function ExpensesPage() {
       </div>
     </div>
   );
+}
+
+function formatDate(value: string) {
+  if (!value) return 'Pending...';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Pending...' : date.toLocaleDateString();
 }

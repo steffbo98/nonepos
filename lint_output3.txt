@@ -1,0 +1,136 @@
+
+> nonepos@1.0.0 lint
+> tsc --noEmit
+
+src/App.tsx(60,26): error TS2322: Type '{ user: DemoUser; }' is not assignable to type 'IntrinsicAttributes'.
+  Property 'user' does not exist on type 'IntrinsicAttributes'.
+src/components/Navbar.tsx(16,20): error TS2304: Cannot find name 'doc'.
+src/components/Navbar.tsx(16,24): error TS2304: Cannot find name 'db'.
+src/components/Navbar.tsx(17,25): error TS2304: Cannot find name 'onSnapshot'.
+src/components/Navbar.tsx(17,45): error TS7006: Parameter 'docSnap' implicitly has an 'any' type.
+src/components/Navbar.tsx(42,10): error TS2304: Cannot find name 'isAdmin'.
+src/components/Navbar.tsx(47,10): error TS2304: Cannot find name 'isAdmin'.
+src/components/Navbar.tsx(53,47): error TS2304: Cannot find name 'user'.
+src/components/Navbar.tsx(56,26): error TS2304: Cannot find name 'signOut'.
+src/components/Navbar.tsx(56,34): error TS2304: Cannot find name 'auth'.
+src/pages/ChatPage.tsx(19,15): error TS2304: Cannot find name 'query'.
+src/pages/ChatPage.tsx(20,7): error TS2304: Cannot find name 'collection'.
+src/pages/ChatPage.tsx(20,18): error TS2304: Cannot find name 'db'.
+src/pages/ChatPage.tsx(21,7): error TS2304: Cannot find name 'orderBy'.
+src/pages/ChatPage.tsx(22,7): error TS2304: Cannot find name 'limit'.
+src/pages/ChatPage.tsx(24,25): error TS2304: Cannot find name 'onSnapshot'.
+src/pages/ChatPage.tsx(24,40): error TS7006: Parameter 'snapshot' implicitly has an 'any' type.
+src/pages/ChatPage.tsx(25,37): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+src/pages/ChatPage.tsx(26,9): error TS7006: Parameter 'error' implicitly has an 'any' type.
+src/pages/ChatPage.tsx(27,7): error TS2304: Cannot find name 'handleFirestoreError'.
+src/pages/ChatPage.tsx(27,35): error TS2304: Cannot find name 'OperationType'.
+src/pages/ChatPage.tsx(43,13): error TS2304: Cannot find name 'addDoc'.
+src/pages/ChatPage.tsx(43,20): error TS2304: Cannot find name 'collection'.
+src/pages/ChatPage.tsx(43,31): error TS2304: Cannot find name 'db'.
+src/pages/ChatPage.tsx(44,19): error TS2304: Cannot find name 'auth'.
+src/pages/ChatPage.tsx(45,22): error TS2304: Cannot find name 'auth'.
+src/pages/ChatPage.tsx(47,20): error TS2304: Cannot find name 'serverTimestamp'.
+src/pages/ChatPage.tsx(51,7): error TS2304: Cannot find name 'handleFirestoreError'.
+src/pages/ChatPage.tsx(51,35): error TS2304: Cannot find name 'OperationType'.
+src/pages/ChatPage.tsx(77,43): error TS2304: Cannot find name 'auth'.
+src/pages/CustomersPage.tsx(26,11): error TS2339: Property 'isAdmin' does not exist on type '{ profile: UserProfile | null; loading: boolean; }'.
+src/pages/CustomersPage.tsx(34,22): error TS2304: Cannot find name 'useSyncStatus'.
+src/pages/DashboardPage.tsx(24,11): error TS2339: Property 'isAdmin' does not exist on type '{ profile: UserProfile | null; loading: boolean; }'.
+src/pages/DashboardPage.tsx(31,22): error TS2304: Cannot find name 'useSyncStatus'.
+src/pages/DashboardPage.tsx(65,31): error TS2304: Cannot find name 'onSnapshot'.
+src/pages/DashboardPage.tsx(65,42): error TS2304: Cannot find name 'collection'.
+src/pages/DashboardPage.tsx(65,53): error TS2304: Cannot find name 'db'.
+src/pages/DashboardPage.tsx(65,71): error TS7006: Parameter 'snapshot' implicitly has an 'any' type.
+src/pages/DashboardPage.tsx(66,41): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+src/pages/ExpensesPage.tsx(24,11): error TS2339: Property 'isAdmin' does not exist on type '{ profile: UserProfile | null; loading: boolean; }'.
+src/pages/ExpensesPage.tsx(33,15): error TS2304: Cannot find name 'query'.
+src/pages/ExpensesPage.tsx(33,21): error TS2304: Cannot find name 'collection'.
+src/pages/ExpensesPage.tsx(33,32): error TS2304: Cannot find name 'db'.
+src/pages/ExpensesPage.tsx(33,49): error TS2304: Cannot find name 'orderBy'.
+src/pages/ExpensesPage.tsx(34,25): error TS2304: Cannot find name 'onSnapshot'.
+src/pages/ExpensesPage.tsx(34,40): error TS7006: Parameter 'snapshot' implicitly has an 'any' type.
+src/pages/ExpensesPage.tsx(35,37): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+src/pages/ExpensesPage.tsx(36,9): error TS7006: Parameter 'error' implicitly has an 'any' type.
+src/pages/ExpensesPage.tsx(37,7): error TS2304: Cannot find name 'handleFirestoreError'.
+src/pages/ExpensesPage.tsx(37,35): error TS2304: Cannot find name 'OperationType'.
+src/pages/ExpensesPage.tsx(45,13): error TS2304: Cannot find name 'addDoc'.
+src/pages/ExpensesPage.tsx(45,20): error TS2304: Cannot find name 'collection'.
+src/pages/ExpensesPage.tsx(45,31): error TS2304: Cannot find name 'db'.
+src/pages/ExpensesPage.tsx(48,15): error TS2304: Cannot find name 'serverTimestamp'.
+src/pages/ExpensesPage.tsx(49,20): error TS2304: Cannot find name 'serverTimestamp'.
+src/pages/ExpensesPage.tsx(54,7): error TS2304: Cannot find name 'handleFirestoreError'.
+src/pages/ExpensesPage.tsx(54,35): error TS2304: Cannot find name 'OperationType'.
+src/pages/ExpensesPage.tsx(61,13): error TS2304: Cannot find name 'deleteDoc'.
+src/pages/ExpensesPage.tsx(61,23): error TS2304: Cannot find name 'doc'.
+src/pages/ExpensesPage.tsx(61,27): error TS2304: Cannot find name 'db'.
+src/pages/ExpensesPage.tsx(63,7): error TS2304: Cannot find name 'handleFirestoreError'.
+src/pages/ExpensesPage.tsx(63,35): error TS2304: Cannot find name 'OperationType'.
+src/pages/InventoryPage.tsx(20,11): error TS2339: Property 'isAdmin' does not exist on type '{ profile: UserProfile | null; loading: boolean; }'.
+src/pages/InventoryPage.tsx(34,24): error TS2304: Cannot find name 'doc'.
+src/pages/InventoryPage.tsx(34,28): error TS2304: Cannot find name 'db'.
+src/pages/InventoryPage.tsx(35,31): error TS2304: Cannot find name 'getDoc'.
+src/pages/InventoryPage.tsx(50,22): error TS2304: Cannot find name 'useSyncStatus'.
+src/pages/InventoryPage.tsx(167,10): error TS2304: Cannot find name 'storage'.
+src/pages/InventoryPage.tsx(174,26): error TS2304: Cannot find name 'ref'.
+src/pages/InventoryPage.tsx(174,30): error TS2304: Cannot find name 'storage'.
+src/pages/InventoryPage.tsx(175,30): error TS2304: Cannot find name 'uploadBytes'.
+src/pages/InventoryPage.tsx(176,33): error TS2304: Cannot find name 'getDownloadURL'.
+src/pages/LoginPage.tsx(15,28): error TS2304: Cannot find name 'GoogleAuthProvider'.
+src/pages/LoginPage.tsx(16,13): error TS2304: Cannot find name 'signInWithPopup'.
+src/pages/LoginPage.tsx(16,29): error TS2304: Cannot find name 'auth'.
+src/pages/POSPage.tsx(185,22): error TS2304: Cannot find name 'useSyncStatus'.
+src/pages/POSPage.tsx(251,15): error TS2304: Cannot find name 'addDoc'.
+src/pages/POSPage.tsx(251,22): error TS2304: Cannot find name 'collection'.
+src/pages/POSPage.tsx(251,33): error TS2304: Cannot find name 'db'.
+src/pages/POSPage.tsx(254,7): error TS2304: Cannot find name 'handleFirestoreError'.
+src/pages/POSPage.tsx(254,35): error TS2304: Cannot find name 'OperationType'.
+src/pages/POSPage.tsx(290,15): error TS2304: Cannot find name 'query'.
+src/pages/POSPage.tsx(290,21): error TS2304: Cannot find name 'collection'.
+src/pages/POSPage.tsx(290,32): error TS2304: Cannot find name 'db'.
+src/pages/POSPage.tsx(290,50): error TS2304: Cannot find name 'orderBy'.
+src/pages/POSPage.tsx(291,25): error TS2304: Cannot find name 'onSnapshot'.
+src/pages/POSPage.tsx(291,40): error TS7006: Parameter 'snapshot' implicitly has an 'any' type.
+src/pages/POSPage.tsx(292,38): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+src/pages/POSPage.tsx(327,18): error TS2304: Cannot find name 'auth'.
+src/pages/POSPage.tsx(518,28): error TS2304: Cannot find name 'auth'.
+src/pages/SettingsPage.tsx(18,11): error TS2339: Property 'isAdmin' does not exist on type '{ profile: UserProfile | null; loading: boolean; }'.
+src/pages/SettingsPage.tsx(45,24): error TS2304: Cannot find name 'doc'.
+src/pages/SettingsPage.tsx(45,28): error TS2304: Cannot find name 'db'.
+src/pages/SettingsPage.tsx(46,31): error TS2304: Cannot find name 'getDoc'.
+src/pages/SettingsPage.tsx(57,9): error TS2304: Cannot find name 'handleFirestoreError'.
+src/pages/SettingsPage.tsx(57,37): error TS2304: Cannot find name 'OperationType'.
+src/pages/SettingsPage.tsx(63,19): error TS2304: Cannot find name 'onSnapshot'.
+src/pages/SettingsPage.tsx(63,30): error TS2304: Cannot find name 'collection'.
+src/pages/SettingsPage.tsx(63,41): error TS2304: Cannot find name 'db'.
+src/pages/SettingsPage.tsx(63,56): error TS7006: Parameter 'snap' implicitly has an 'any' type.
+src/pages/SettingsPage.tsx(64,30): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+src/pages/SettingsPage.tsx(73,13): error TS2304: Cannot find name 'addDoc'.
+src/pages/SettingsPage.tsx(73,20): error TS2304: Cannot find name 'collection'.
+src/pages/SettingsPage.tsx(73,31): error TS2304: Cannot find name 'db'.
+src/pages/SettingsPage.tsx(78,20): error TS2304: Cannot find name 'serverTimestamp'.
+src/pages/SettingsPage.tsx(83,8): error TS2304: Cannot find name 'handleFirestoreError'.
+src/pages/SettingsPage.tsx(83,36): error TS2304: Cannot find name 'OperationType'.
+src/pages/SettingsPage.tsx(89,13): error TS2304: Cannot find name 'updateDoc'.
+src/pages/SettingsPage.tsx(89,23): error TS2304: Cannot find name 'doc'.
+src/pages/SettingsPage.tsx(89,27): error TS2304: Cannot find name 'db'.
+src/pages/SettingsPage.tsx(93,7): error TS2304: Cannot find name 'handleFirestoreError'.
+src/pages/SettingsPage.tsx(93,35): error TS2304: Cannot find name 'OperationType'.
+src/pages/SettingsPage.tsx(100,13): error TS2304: Cannot find name 'setDoc'.
+src/pages/SettingsPage.tsx(100,20): error TS2304: Cannot find name 'doc'.
+src/pages/SettingsPage.tsx(100,24): error TS2304: Cannot find name 'db'.
+src/pages/SettingsPage.tsx(107,20): error TS2304: Cannot find name 'serverTimestamp'.
+src/pages/SettingsPage.tsx(111,7): error TS2304: Cannot find name 'handleFirestoreError'.
+src/pages/SettingsPage.tsx(111,35): error TS2304: Cannot find name 'OperationType'.
+src/pages/SettingsPage.tsx(123,26): error TS2304: Cannot find name 'ref'.
+src/pages/SettingsPage.tsx(123,30): error TS2304: Cannot find name 'storage'.
+src/pages/SettingsPage.tsx(123,56): error TS2304: Cannot find name 'auth'.
+src/pages/SettingsPage.tsx(124,13): error TS2304: Cannot find name 'uploadBytes'.
+src/pages/SettingsPage.tsx(125,25): error TS2304: Cannot find name 'getDownloadURL'.
+src/pages/SettingsPage.tsx(139,13): error TS2304: Cannot find name 'addDoc'.
+src/pages/SettingsPage.tsx(139,20): error TS2304: Cannot find name 'collection'.
+src/pages/SettingsPage.tsx(139,31): error TS2304: Cannot find name 'db'.
+src/pages/SettingsPage.tsx(140,14): error TS2304: Cannot find name 'auth'.
+src/pages/SettingsPage.tsx(141,16): error TS2304: Cannot find name 'auth'.
+src/pages/SettingsPage.tsx(143,20): error TS2304: Cannot find name 'serverTimestamp'.
+src/pages/SettingsPage.tsx(149,7): error TS2304: Cannot find name 'handleFirestoreError'.
+src/pages/SettingsPage.tsx(149,35): error TS2304: Cannot find name 'OperationType'.

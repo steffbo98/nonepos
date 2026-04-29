@@ -8,7 +8,7 @@ dotenv.config();
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
   app.use(cors());
   app.use(express.json());
@@ -46,11 +46,27 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
+    const HMR_PORT = process.env.VITE_HMR_PORT ? Number(process.env.VITE_HMR_PORT) : 24680;
+
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: {
+          protocol: 'ws',
+          host: 'localhost',
+          port: HMR_PORT,
+        },
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);
+
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+      console.log(`Vite HMR port: ${HMR_PORT}`);
+    });
+    return;
   } else {
     // Serve static files in production
     const distPath = path.join(process.cwd(), "dist");
