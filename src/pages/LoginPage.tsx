@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Lock, LogIn, Package2, UserPlus, Key, Fingerprint, ShieldCheck } from 'lucide-react';
 import { getDataService } from '../lib/dataService';
+import { FormInput, FormButton, Alert } from '../components/FormComponents';
 
 type LocalUser = {
   id: string;
@@ -24,6 +25,22 @@ export default function LoginPage({ onAuth }: { onAuth: (user: LocalUser) => voi
   const [loading, setLoading] = useState(false);
   const [biometricStatus, setBiometricStatus] = useState<string | null>(null);
   const [isBiometricSupported, setIsBiometricSupported] = useState(false);
+  const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [terminalId, setTerminalId] = useState<string>('');
+
+  const formatAuthError = (error: unknown, fallback: string) => {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.toLowerCase().includes('invalid email or password')) {
+      return 'Wrong email or password. Please try again.';
+    }
+    if (message.toLowerCase().includes('already exists') || message.toLowerCase().includes('already registered')) {
+      return 'This email is already registered. Please log in or use a different address.';
+    }
+    if (message.toLowerCase().includes('failed to fetch') || message.toLowerCase().includes('unable to reach backend api')) {
+      return 'Unable to connect to the authentication service. Please check your network and try again.';
+    }
+    return message || fallback;
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -31,6 +48,10 @@ export default function LoginPage({ onAuth }: { onAuth: (user: LocalUser) => voi
     setError(null);
 
     try {
+      if (mode === 'register' && !isOnline) {
+        throw new Error('Online connection is required to create a new account.');
+      }
+
       const response = mode === 'login'
         ? await dataService.loginUser({ email, password })
         : await dataService.registerUser({ fullName, email, password });
@@ -41,7 +62,7 @@ export default function LoginPage({ onAuth }: { onAuth: (user: LocalUser) => voi
         uid: user.id,
       });
     } catch (err: any) {
-      setError(err.message || 'Authentication failed');
+      setError(formatAuthError(err, 'Authentication failed'));
     } finally {
       setLoading(false);
     }
@@ -53,6 +74,36 @@ export default function LoginPage({ onAuth }: { onAuth: (user: LocalUser) => voi
       typeof window.PublicKeyCredential !== 'undefined' &&
       typeof navigator.credentials !== 'undefined'
     );
+
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const storageKey = 'nonepos-terminal-id';
+    let savedId = window.localStorage.getItem(storageKey);
+
+    if (!savedId) {
+      const uniquePart = typeof window.crypto !== 'undefined' && typeof window.crypto.randomUUID === 'function'
+        ? window.crypto.randomUUID().slice(0, 8).toUpperCase()
+        : Math.random().toString(36).slice(2, 10).toUpperCase();
+      savedId = `POS-${uniquePart}`;
+      window.localStorage.setItem(storageKey, savedId);
+    }
+
+    setTerminalId(savedId);
   }, []);
 
   const switchMode = (nextMode: 'login' | 'register' | 'requestReset' | 'confirmReset') => {
@@ -85,12 +136,15 @@ export default function LoginPage({ onAuth }: { onAuth: (user: LocalUser) => voi
     setMessage(null);
 
     try {
-      const response = await dataService.requestPasswordReset(email);
-      setResetToken(response.resetToken);
+      if (!isOnline) {
+        throw new Error('Password reset requires an active internet connection.');
+      }
+
+      await dataService.requestPasswordReset(email);
       setMode('confirmReset');
-      setMessage('Reset code generated. Enter it below with your new password.');
+      setMessage('Reset code emailed. Check your inbox and enter the code below.');
     } catch (err: any) {
-      setError(err.message || 'Unable to generate reset code');
+      setError(formatAuthError(err, 'Unable to generate reset code'));
     } finally {
       setLoading(false);
     }
@@ -110,7 +164,7 @@ export default function LoginPage({ onAuth }: { onAuth: (user: LocalUser) => voi
       setResetToken('');
       setMessage('Password updated successfully. Please log in.');
     } catch (err: any) {
-      setError(err.message || 'Unable to reset password');
+      setError(formatAuthError(err, 'Unable to reset password'));
     } finally {
       setLoading(false);
     }
@@ -154,7 +208,7 @@ export default function LoginPage({ onAuth }: { onAuth: (user: LocalUser) => voi
       await dataService.registerBiometricCredential(email, credentialId);
       setBiometricStatus('Fingerprint login registered successfully. Use it to sign in next time.');
     } catch (err: any) {
-      setError(err.message || 'Fingerprint registration failed');
+      setError(formatAuthError(err, 'Fingerprint registration failed'));
     } finally {
       setLoading(false);
     }
@@ -189,247 +243,217 @@ export default function LoginPage({ onAuth }: { onAuth: (user: LocalUser) => voi
       const response = await dataService.loginWithBiometric(email, credentialId);
       onAuth({ ...response.user, uid: response.user.id });
     } catch (err: any) {
-      setError(err.message || 'Fingerprint login failed');
+      setError(formatAuthError(err, 'Fingerprint login failed'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-[#E4E3E0]">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.18),_transparent_24%),radial-gradient(circle_at_top_right,_rgba(16,185,129,0.12),_transparent_18%),linear-gradient(180deg,#020617,_#07101c)]">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md bg-white border border-[#141414] p-10 relative overflow-hidden"
+        className="w-full max-w-md bg-white border border-slate-200/50 p-8 relative overflow-hidden shadow-2xl"
       >
-        <div className="absolute top-0 left-0 w-full h-1 bg-[#141414]" />
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-600 to-emerald-600" />
 
-        <div className="flex flex-col items-center gap-5 mb-8">
-          <div className="w-14 h-14 bg-[#141414] flex items-center justify-center">
-            <Package2 className="w-7 h-7 text-[#E4E3E0]" />
+        <div className="flex flex-col items-center gap-6 mb-8">
+          <div className="w-16 h-16 bg-slate-900 flex items-center justify-center rounded-2xl shadow-lg">
+            <Package2 className="w-8 h-8 text-white" />
           </div>
           <div className="text-center">
-            <h1 className="text-3xl font-black tracking-tighter text-[#141414]">NonePOS</h1>
-            <p className="text-[11px] font-mono tracking-[0.2em] text-[#141414] opacity-50">
-              Local Desktop Access
+            <h1 className="text-3xl font-black tracking-tighter text-slate-900">NonePOS</h1>
+            <p className="text-sm font-medium tracking-wide text-slate-600 mt-1">
+              Professional Point of Sale
             </p>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 border border-[#141414] mb-6">
+        <div className="grid grid-cols-2 border border-slate-200 mb-6 rounded-lg overflow-hidden">
           <button
             type="button"
             onClick={() => switchMode('login')}
-            className={`py-3 text-xs font-black tracking-widest ${mode === 'login' ? 'bg-[#141414] text-[#E4E3E0]' : 'bg-white text-[#141414]'}`}
+            className={`py-3 text-sm font-semibold transition-colors ${
+              mode === 'login'
+                ? 'bg-slate-900 text-white'
+                : 'bg-white text-slate-700 hover:bg-slate-50'
+            }`}
           >
             Login
           </button>
           <button
             type="button"
             onClick={() => switchMode('register')}
-            className={`py-3 text-xs font-black tracking-widest border-l border-[#141414] ${mode === 'register' ? 'bg-[#141414] text-[#E4E3E0]' : 'bg-white text-[#141414]'}`}
+            className={`py-3 text-sm font-semibold border-l border-slate-200 transition-colors ${
+              mode === 'register'
+                ? 'bg-slate-900 text-white'
+                : 'bg-white text-slate-700 hover:bg-slate-50'
+            }`}
           >
             Register
           </button>
         </div>
 
         {error && (
-          <div className="mb-5 p-4 bg-red-50 border border-red-200 text-red-600 text-sm font-mono">
-            {error}
-          </div>
+          <Alert type="error" message={error} />
         )}
 
-        <form onSubmit={mode === 'confirmReset' ? handleConfirmReset : submit} className="space-y-4">
+        <form onSubmit={mode === 'confirmReset' ? handleConfirmReset : submit} className="space-y-5">
           {mode === 'register' && (
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-widest opacity-50">Full Name</label>
-              <input
-                required
-                value={fullName}
-                onChange={(event) => setFullName(event.target.value)}
-                className="w-full px-4 py-3 bg-white border border-[#141414] outline-none text-sm font-bold"
-                placeholder="Admin User"
-              />
-            </div>
+            <FormInput
+              label="Full Name"
+              required
+              value={fullName}
+              onChange={(event) => setFullName(event.target.value)}
+              placeholder="Enter your full name"
+            />
           )}
 
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[10px] font-bold uppercase tracking-widest opacity-50">Email</label>
-            <input
-              required
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              className="w-full px-4 py-3 bg-white border border-[#141414] outline-none text-sm font-bold"
-              placeholder="admin@nonepos.local"
-            />
-          </div>
+          <FormInput
+            label="Email Address"
+            required
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="admin@nonepos.local"
+          />
 
           {(mode === 'login' || mode === 'register') && (
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-widest opacity-50">Password</label>
-              <input
-                required
-                type="password"
-                minLength={6}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                className="w-full px-4 py-3 bg-white border border-[#141414] outline-none text-sm font-bold"
-                placeholder="Minimum 6 characters"
-              />
-            </div>
+            <FormInput
+              label="Password"
+              required
+              type="password"
+              minLength={6}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Enter your password"
+            />
           )}
 
           {mode === 'confirmReset' && (
             <>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-widest opacity-50">Reset Code</label>
-                <input
-                  required
-                  value={resetToken}
-                  onChange={(event) => setResetToken(event.target.value)}
-                  className="w-full px-4 py-3 bg-white border border-[#141414] outline-none text-sm font-bold"
-                  placeholder="Paste reset code here"
-                />
-              </div>
+              <FormInput
+                label="Reset Code"
+                required
+                value={resetToken}
+                onChange={(event) => setResetToken(event.target.value)}
+                placeholder="Paste reset code here"
+              />
 
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-widest opacity-50">New Password</label>
-                <input
-                  required
-                  type="password"
-                  minLength={6}
-                  value={newPassword}
-                  onChange={(event) => setNewPassword(event.target.value)}
-                  className="w-full px-4 py-3 bg-white border border-[#141414] outline-none text-sm font-bold"
-                  placeholder="Enter your new password"
-                />
-              </div>
+              <FormInput
+                label="New Password"
+                required
+                type="password"
+                minLength={6}
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+                placeholder="Enter your new password"
+              />
             </>
           )}
 
           {message && (
-            <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-mono">
-              {message}
-            </div>
+            <Alert type="success" message={message} />
           )}
 
           {biometricStatus && (
-            <div className="p-4 bg-sky-50 border border-sky-200 text-sky-700 text-sm font-mono">
-              {biometricStatus}
-            </div>
+            <Alert type="info" message={biometricStatus} />
           )}
 
           {mode === 'requestReset' ? (
-            <button
-              type="button"
-              disabled={loading}
-              onClick={handleResetRequest}
-              className="w-full flex items-center justify-center gap-3 bg-[#141414] text-[#E4E3E0] py-4 px-6 font-bold tracking-widest text-sm hover:invert transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
-            >
-              {loading ? (
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                  className="w-4 h-4 border-2 border-[#E4E3E0] border-t-transparent rounded-full"
-                />
-              ) : (
-                <>
-                  <Key className="w-5 h-5 transition-transform group-hover:translate-x-1" />
-                  Generate Reset Code
-                </>
-              )}
-            </button>
+            <FormButton type="button" loading={loading} onClick={handleResetRequest}>
+              <Key className="w-5 h-5" />
+              Generate Reset Code
+            </FormButton>
           ) : (
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full flex items-center justify-center gap-3 bg-[#141414] text-[#E4E3E0] py-4 px-6 font-bold tracking-widest text-sm hover:invert transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
-            >
-              {loading ? (
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                  className="w-4 h-4 border-2 border-[#E4E3E0] border-t-transparent rounded-full"
-                />
-              ) : mode === 'login' ? (
+            <FormButton type="submit" loading={loading}>
+              {mode === 'login' ? (
                 <>
-                  <LogIn className="w-5 h-5 transition-transform group-hover:translate-x-1" />
-                  Login
+                  <LogIn className="w-5 h-5" />
+                  Sign In
                 </>
               ) : mode === 'register' ? (
                 <>
-                  <UserPlus className="w-5 h-5 transition-transform group-hover:translate-x-1" />
+                  <UserPlus className="w-5 h-5" />
                   Create Account
                 </>
               ) : (
                 <>
-                  <Key className="w-5 h-5 transition-transform group-hover:translate-x-1" />
+                  <Key className="w-5 h-5" />
                   Reset Password
                 </>
               )}
-            </button>
+            </FormButton>
           )}
         </form>
 
         {(mode === 'login' || mode === 'register') && (
-          <div className="mt-4 flex justify-between items-center text-[10px] font-mono opacity-50 gap-3">
+          <div className="mt-6 flex justify-between items-center text-sm text-slate-600 gap-3">
             <button
               type="button"
               onClick={() => switchMode('requestReset')}
-              className="underline"
+              className="text-blue-600 hover:text-blue-700 font-medium"
             >
               Forgot password?
             </button>
             {mode === 'login' && isBiometricSupported && (
               <div className="grid grid-cols-2 gap-3 w-full">
-                <button
+                <FormButton
                   type="button"
+                  variant="primary"
                   disabled={loading}
                   onClick={handleFingerprintLogin}
-                  className="w-full px-4 py-3 bg-[#141414] text-[#E4E3E0] text-xs font-black tracking-widest uppercase"
+                  className="px-4 py-2 text-xs"
                 >
-                  <Fingerprint className="inline w-4 h-4 mr-2" /> Use Fingerprint
-                </button>
-                <button
+                  <Fingerprint className="w-4 h-4 mr-2" />
+                  Fingerprint
+                </FormButton>
+                <FormButton
                   type="button"
+                  variant="secondary"
                   disabled={loading}
                   onClick={handleRegisterFingerprint}
-                  className="w-full px-4 py-3 border border-[#141414] bg-white text-[#141414] text-xs font-black tracking-widest uppercase"
+                  className="px-4 py-2 text-xs"
                 >
-                  <ShieldCheck className="inline w-4 h-4 mr-2" /> Register Fingerprint
-                </button>
+                  <ShieldCheck className="w-4 h-4 mr-2" />
+                  Register
+                </FormButton>
               </div>
             )}
           </div>
         )}
 
         {mode === 'requestReset' && (
-          <div className="mt-4 text-[10px] font-mono text-slate-600">
-            Enter the email address for the account you want to reset. A reset code will be generated locally.
+          <div className="mt-6 text-sm text-slate-600">
+            Enter the email address for the account you want to reset. A reset code will be emailed to you.
           </div>
         )}
 
         {mode === 'confirmReset' && (
-          <div className="mt-4 text-[10px] font-mono text-slate-600">
-            Enter the reset code and a new password to update your local account.
+          <div className="mt-6 text-sm text-slate-600">
+            Enter the reset code from your email and a new password to update your account.
           </div>
         )}
+
+        <div className="mt-4 text-xs font-medium text-slate-500">
+          {isOnline ? 'Online connection is available.' : 'Offline mode detected — registration and password reset require internet access.'}
+        </div>
 
         {mode !== 'confirmReset' && mode !== 'requestReset' && (
-          <div className="mt-4 text-[10px] font-mono text-slate-600">
-            No internet is required for local auth. Fingerprint login uses your device's WebAuthn support.
+          <div className="mt-6 text-sm text-slate-600">
+            No internet required for local authentication. Fingerprint login uses your device's WebAuthn support.
           </div>
         )}
 
-        <div className="mt-8 pt-6 border-t border-gray-100 flex flex-col gap-3">
-          <div className="flex items-center gap-2 text-[10px] font-mono text-slate-500">
+        <div className="mt-8 pt-6 border-t border-slate-200 flex flex-col gap-3">
+          <div className="flex items-center gap-2 text-xs text-slate-500">
             <Lock className="w-3 h-3" />
-            <span>Accounts are stored in the local SQLite database on this computer.</span>
+            <span>Accounts are stored securely in the local SQLite database.</span>
           </div>
-          <div className="flex justify-between items-center text-[10px] font-mono text-slate-400">
-            <span>Terminal ID: POS-8829</span>
-            <span>V 1.0.0</span>
+          <div className="flex justify-between items-center text-xs text-slate-400">
+            <span>Terminal ID: {terminalId || 'Generating...'}</span>
+            <span>v1.0.0</span>
           </div>
         </div>
       </motion.div>

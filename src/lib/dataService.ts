@@ -3,7 +3,10 @@
  * All data operations go through HTTP to the backend database
  */
 
-const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:5000/api';
+const defaultApiBase = (import.meta as any).env?.MODE === 'development'
+  ? 'http://localhost:3006/api'
+  : 'http://localhost:5000/api';
+const API_BASE = (import.meta as any).env?.VITE_API_BASE || defaultApiBase;
 
 export class DataService {
   // Helper method to make HTTP requests
@@ -127,6 +130,14 @@ export class DataService {
     return this.request('PUT', `/orders/${id}`, orderData);
   }
 
+  async sendEmailReceipt(payload: { order: any; customerEmail: string }) {
+    return this.request('POST', '/notifications/email-receipt', payload);
+  }
+
+  async sendSmsInvoice(payload: { phone: string; order: any }) {
+    return this.request('POST', '/notifications/sms-invoice', payload);
+  }
+
   // === CUSTOMERS ===
   async listCustomers(options?: { search?: string }) {
     const params = new URLSearchParams();
@@ -214,6 +225,28 @@ export class DataService {
     return this.request('POST', `/settings/${key}`, { value });
   }
 
+  async activateBilling(licenseKey: string, terminalId: string, plan: string) {
+    return this.request('POST', '/billing/activate', { licenseKey, terminalId, plan });
+  }
+
+  async initiateMpesaPayment(phone: string, amount: number, licenseKey: string, terminalId: string, plan: string) {
+    return this.request('POST', '/billing/mpesa-initiate', {
+      phone,
+      amount,
+      licenseKey,
+      terminalId,
+      plan,
+    });
+  }
+
+  async checkMpesaPaymentStatus(transactionId: string) {
+    return this.request('GET', `/billing/mpesa-status/${transactionId}`);
+  }
+
+  async refreshBillingStatus() {
+    return this.getSetting('billing');
+  }
+
   // === SYNC ===
   async listSyncQueue(limit = 100) {
     return this.request('GET', `/sync/queue?limit=${limit}`);
@@ -295,6 +328,40 @@ export class DataService {
   async forceSync() {
     // Not applicable for desktop app
     return;
+  }
+
+  // === ANALYTICS ===
+  async getHotProducts(daysBack = 30, limit = 10) {
+    return this.request('GET', `/analytics/hot-products?days=${daysBack}&limit=${limit}`);
+  }
+
+  async getProductsByCategory() {
+    return this.request('GET', '/analytics/categories');
+  }
+
+  async getFinancialPosition(daysBack = 30) {
+    return this.request('GET', `/analytics/financial-position?days=${daysBack}`);
+  }
+
+  async getLowStockProducts(threshold = 10) {
+    return this.request('GET', `/analytics/low-stock?threshold=${threshold}`);
+  }
+
+  // === STOCK ALERT RULES ===
+  async listStockAlertRules() {
+    return this.request('GET', '/stock-alerts/rules');
+  }
+
+  async createStockAlertRule(ruleData: any) {
+    return this.request('POST', '/stock-alerts/rules', ruleData);
+  }
+
+  async updateStockAlertRule(id: string, ruleData: any) {
+    return this.request('PUT', `/stock-alerts/rules/${id}`, ruleData);
+  }
+
+  async deleteStockAlertRule(id: string) {
+    return this.request('DELETE', `/stock-alerts/rules/${id}`);
   }
 }
 

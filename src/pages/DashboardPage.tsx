@@ -390,22 +390,22 @@ function formatDateTime(value: string) {
 
 function StatCard({ icon, label, value, trend, positive }: any) {
   return (
-    <div className="bg-white border border-gray-100 p-6 group hover:border-[#141414] transition-all">
+    <div className="bg-slate-950/95 border border-white/10 p-6 group hover:border-cyan-400/30 transition-all shadow-panel">
       <div className="flex justify-between items-start mb-4">
-        <div className="p-2 bg-gray-50 group-hover:bg-[#141414] group-hover:text-[#E4E3E0] transition-colors">
+        <div className="p-2 rounded-2xl bg-slate-900 text-slate-100 transition-colors">
           {icon}
         </div>
         <div className={cn(
-          "flex items-center gap-1 text-[10px] font-bold",
-          positive ? "text-emerald-600" : "text-amber-600"
+          "flex items-center gap-1 text-[10px] font-bold tracking-wide",
+          positive ? "text-emerald-400" : "text-amber-400"
         )}>
           {positive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
           {trend}
         </div>
       </div>
       <div>
-        <p className="text-[10px] font-mono opacity-40 tracking-widest mb-1">{label}</p>
-        <p className="text-2xl font-black tracking-tighter text-[#141414]">{value}</p>
+        <p className="text-[10px] font-mono tracking-widest text-slate-400 mb-1">{label}</p>
+        <p className="text-2xl font-black tracking-tighter text-slate-100">{value}</p>
       </div>
     </div>
   );

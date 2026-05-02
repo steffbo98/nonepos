@@ -232,6 +232,30 @@
     color: #92400e !important;
   }
 
+  .theme-light [class*="bg-red-950"] {
+    background-color: #fee2e2 !important;
+  }
+
+  .theme-light [class*="text-red-300"] {
+    color: #991b1b !important;
+  }
+
+  .theme-light [class*="border-red-700"] {
+    border-color: rgba(220, 38, 38, 0.4) !important;
+  }
+
+  .theme-light [class*="bg-emerald-950"] {
+    background-color: #ecfdf5 !important;
+  }
+
+  .theme-light [class*="text-emerald-300"] {
+    color: #047857 !important;
+  }
+
+  .theme-light [class*="border-emerald-700"] {
+    border-color: rgba(16, 185, 129, 0.4) !important;
+  }
+
   .theme-light [class*="text-red-400"] {
     color: #991b1b !important;
   }

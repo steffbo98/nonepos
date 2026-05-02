@@ -9,8 +9,18 @@ export class POSDatabase {
   private dbPath: string;
 
   constructor() {
-    // Use AppData/Local for database file
-    const appData = app.getPath('userData');
+    // Use AppData/Local for database file, with fallback for non-Electron environments
+    let appData: string;
+    try {
+      appData = app.getPath('userData');
+    } catch (error) {
+      // Fallback for development/server environments without Electron
+      appData = path.join(process.cwd(), 'data');
+      // Ensure the data directory exists
+      if (!fs.existsSync(appData)) {
+        fs.mkdirSync(appData, { recursive: true });
+      }
+    }
     this.dbPath = path.join(appData, 'pos.db');
 
     // Initialize database
@@ -148,6 +158,7 @@ export class POSDatabase {
         stockAfter INTEGER NOT NULL,
         note TEXT,
         createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (productId) REFERENCES products(id),
         FOREIGN KEY (orderId) REFERENCES orders(id)
       );
@@ -209,10 +220,42 @@ export class POSDatabase {
 
       CREATE INDEX IF NOT EXISTS idx_z_reports_createdAt ON z_reports(createdAt);
       CREATE INDEX IF NOT EXISTS idx_z_reports_rangeStart ON z_reports(rangeStart);
+
+      -- Stock Alert Rules for admins
+      CREATE TABLE IF NOT EXISTS stock_alert_rules (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        minStockLevel INTEGER NOT NULL,
+        productIds TEXT,
+        categories TEXT,
+        emailRecipients TEXT NOT NULL,
+        enabled BOOLEAN DEFAULT 1,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Alert Logs for tracking sent alerts
+      CREATE TABLE IF NOT EXISTS alert_logs (
+        id TEXT PRIMARY KEY,
+        ruleId TEXT,
+        productId TEXT,
+        alertType TEXT NOT NULL,
+        message TEXT,
+        sentTo TEXT,
+        status TEXT DEFAULT 'pending',
+        sentAt TEXT,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (ruleId) REFERENCES stock_alert_rules(id),
+        FOREIGN KEY (productId) REFERENCES products(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_alert_logs_created ON alert_logs(createdAt);
+      CREATE INDEX IF NOT EXISTS idx_alert_logs_product ON alert_logs(productId);
     `);
 
     this.ensureUserColumns();
     this.ensureOrderColumns();
+    this.ensureStockMovementColumns();
   }
 
   private ensureUserColumns() {
@@ -251,6 +294,20 @@ export class POSDatabase {
     for (const [name, definition] of Object.entries(requiredColumns)) {
       if (!existing.has(name)) {
         this.db.prepare(`ALTER TABLE orders ADD COLUMN ${name} ${definition}`).run();
+      }
+    }
+  }
+
+  private ensureStockMovementColumns() {
+    const columns = this.db.prepare(`PRAGMA table_info(stock_movements)`).all() as { name: string }[];
+    const existing = new Set(columns.map(column => column.name));
+    const requiredColumns: Record<string, string> = {
+      updatedAt: 'TEXT DEFAULT CURRENT_TIMESTAMP'
+    };
+
+    for (const [name, definition] of Object.entries(requiredColumns)) {
+      if (!existing.has(name)) {
+        this.db.prepare(`ALTER TABLE stock_movements ADD COLUMN ${name} ${definition}`).run();
       }
     }
   }
@@ -493,6 +550,7 @@ export class POSDatabase {
     if (!Number.isFinite(quantityChange) || quantityChange === 0) throw new Error('Quantity change cannot be zero');
     if (!Number.isFinite(stockAfter) || stockAfter < 0) throw new Error('Stock after movement is invalid');
 
+    const now = new Date().toISOString();
     return this.create('stock_movements', {
       productId: data.productId,
       orderId: data.orderId || null,
@@ -500,7 +558,8 @@ export class POSDatabase {
       quantityChange,
       stockAfter,
       note: data.note || null,
-      createdAt: new Date().toISOString()
+      createdAt: now,
+      updatedAt: now
     });
   }
 
@@ -554,7 +613,7 @@ export class POSDatabase {
       throw new Error('No account exists for that email');
     }
 
-    const resetToken = crypto.randomBytes(24).toString('hex');
+    const resetToken = crypto.randomBytes(4).toString('hex').toUpperCase();
     const resetTokenExpires = new Date(Date.now() + 1000 * 60 * 60).toISOString();
 
     this.db.prepare(`
@@ -946,8 +1005,8 @@ export class POSDatabase {
       );
 
       this.db.prepare(`
-        INSERT INTO stock_movements (id, productId, orderId, type, quantityChange, stockAfter, note, createdAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO stock_movements (id, productId, orderId, type, quantityChange, stockAfter, note, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         this.generateId(),
         product.id,
@@ -956,6 +1015,7 @@ export class POSDatabase {
         quantity,
         stockAfter,
         data.note || `Purchase received ${purchaseId.slice(0, 8).toUpperCase()}`,
+        now,
         now
       );
 
@@ -980,6 +1040,132 @@ export class POSDatabase {
     } else {
       this.db.prepare(`INSERT INTO settings (id, key, value, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)`).run(this.generateId(), key, JSON.stringify(value), new Date().toISOString(), new Date().toISOString());
     }
+  }
+
+  // === STOCK ALERT RULES ===
+  async listStockAlertRules(): Promise<any[]> {
+    return this.list('stock_alert_rules', { orderBy: 'createdAt DESC' });
+  }
+
+  async createStockAlertRule(data: any): Promise<any> {
+    return this.create('stock_alert_rules', {
+      ...data,
+      emailRecipients: Array.isArray(data.emailRecipients) ? JSON.stringify(data.emailRecipients) : data.emailRecipients,
+      productIds: data.productIds ? JSON.stringify(data.productIds) : null,
+      categories: data.categories ? JSON.stringify(data.categories) : null,
+    });
+  }
+
+  async updateStockAlertRule(id: string, data: any): Promise<any> {
+    return this.update('stock_alert_rules', id, {
+      ...data,
+      emailRecipients: Array.isArray(data.emailRecipients) ? JSON.stringify(data.emailRecipients) : data.emailRecipients,
+      productIds: data.productIds ? JSON.stringify(data.productIds) : null,
+      categories: data.categories ? JSON.stringify(data.categories) : null,
+    });
+  }
+
+  async deleteStockAlertRule(id: string): Promise<void> {
+    return this.delete('stock_alert_rules', id);
+  }
+
+  // === ANALYTICS ===
+  async getHotProducts(daysBack = 30, limit = 10): Promise<any[]> {
+    const sinceDate = new Date();
+    sinceDate.setDate(sinceDate.getDate() - daysBack);
+
+    // Get all completed orders and manually aggregate
+    const orders = this.db.prepare(`
+      SELECT id, items FROM orders
+      WHERE orderStatus = 'completed' AND createdAt >= ?
+      ORDER BY createdAt DESC
+    `).all(sinceDate.toISOString()) as any[];
+
+    const productMap = new Map<string, any>();
+
+    for (const order of orders) {
+      const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+      for (const item of items || []) {
+        const key = item.id || item.productId;
+        if (!productMap.has(key)) {
+          productMap.set(key, {
+            id: key,
+            name: item.name,
+            sku: item.sku,
+            category: item.category,
+            totalSold: 0,
+            revenue: 0,
+            transactionCount: 0,
+          });
+        }
+        const entry = productMap.get(key);
+        entry.totalSold += item.quantity || 1;
+        entry.revenue += (item.price || 0) * (item.quantity || 1);
+        entry.transactionCount += 1;
+      }
+    }
+
+    return Array.from(productMap.values())
+      .sort((a, b) => b.totalSold - a.totalSold)
+      .slice(0, limit);
+  }
+
+  async getProductsByCategory(): Promise<any[]> {
+    const sql = `
+      SELECT 
+        p.category,
+        COUNT(*) as productCount,
+        SUM(p.stock) as totalStock,
+        AVG(p.price) as avgPrice
+      FROM products p
+      GROUP BY p.category
+      ORDER BY productCount DESC
+    `;
+    return this.db.prepare(sql).all() as any[];
+  }
+
+  async getFinancialPosition(daysBack = 30): Promise<any> {
+    const sinceDate = new Date();
+    sinceDate.setDate(sinceDate.getDate() - daysBack);
+
+    const sales = this.db.prepare(`
+      SELECT 
+        SUM(totalAmount) as totalSales,
+        COUNT(*) as transactionCount,
+        AVG(totalAmount) as avgTransaction
+      FROM orders
+      WHERE orderStatus = 'completed' AND createdAt >= ?
+    `).get(sinceDate.toISOString()) as any;
+
+    const refunds = this.db.prepare(`
+      SELECT SUM(totalAmount) as totalRefunded
+      FROM orders
+      WHERE orderStatus = 'refunded' AND createdAt >= ?
+    `).get(sinceDate.toISOString()) as any;
+
+    const expenses = this.db.prepare(`
+      SELECT SUM(amount) as totalExpenses
+      FROM expenses
+      WHERE createdAt >= ?
+    `).get(sinceDate.toISOString()) as any;
+
+    return {
+      sales: sales?.totalSales || 0,
+      transactionCount: sales?.transactionCount || 0,
+      avgTransaction: sales?.avgTransaction || 0,
+      refunds: refunds?.totalRefunded || 0,
+      expenses: expenses?.totalExpenses || 0,
+      daysBack,
+    };
+  }
+
+  async getLowStockProducts(threshold = 10): Promise<any[]> {
+    return this.db.prepare(`
+      SELECT id, name, sku, stock, category, price, costPrice
+      FROM products
+      WHERE stock <= ?
+      ORDER BY stock ASC
+    `).all(threshold) as any[];
   }
 
   // Utility methods
@@ -1183,37 +1369,62 @@ export class POSDatabase {
     const fileName = `pos_backup_${createdAt.getTime()}.db`;
     const backupPath = path.join(dir, fileName);
 
-    this.db.backup(backupPath);
+    try {
+      this.db.backup(backupPath);
 
-    const stat = fs.statSync(backupPath);
-    return {
-      id: fileName,
-      fileName,
-      createdAt: createdAt.toISOString(),
-      sizeBytes: stat.size,
-    };
+      const stat = fs.statSync(backupPath);
+      return {
+        id: fileName,
+        fileName,
+        createdAt: createdAt.toISOString(),
+        sizeBytes: stat.size,
+      };
+    } catch (error) {
+      console.error('Failed to create backup:', error);
+      throw new Error(`Failed to create backup: ${(error as Error).message}`);
+    }
   }
 
   async listBackups(): Promise<Array<{ id: string; fileName: string; createdAt: string; sizeBytes: number }>> {
     const dir = this.getBackupsDir();
-    if (!fs.existsSync(dir)) return [];
+    
+    // Ensure backups directory exists
+    if (!fs.existsSync(dir)) {
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+      } catch (error) {
+        console.error('Failed to create backups directory:', error);
+        return [];
+      }
+    }
 
-    const entries = fs.readdirSync(dir);
-    const backups = entries
-      .filter((name) => name.startsWith('pos_backup_') && name.endsWith('.db'))
-      .map((name) => {
-        const filePath = path.join(dir, name);
-        const stat = fs.statSync(filePath);
-        return {
-          id: name,
-          fileName: name,
-          createdAt: stat.mtime.toISOString(),
-          sizeBytes: stat.size,
-        };
-      })
-      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    try {
+      const entries = fs.readdirSync(dir);
+      const backups = entries
+        .filter((name) => name.startsWith('pos_backup_') && name.endsWith('.db'))
+        .map((name) => {
+          const filePath = path.join(dir, name);
+          try {
+            const stat = fs.statSync(filePath);
+            return {
+              id: name,
+              fileName: name,
+              createdAt: stat.mtime.toISOString(),
+              sizeBytes: stat.size,
+            };
+          } catch (statError) {
+            console.error(`Failed to stat backup file ${name}:`, statError);
+            return null;
+          }
+        })
+        .filter((backup): backup is { id: string; fileName: string; createdAt: string; sizeBytes: number } => backup !== null)
+        .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 
-    return backups;
+      return backups;
+    } catch (error) {
+      console.error('Failed to read backups directory:', error);
+      return [];
+    }
   }
 
   async backup(backupPath: string): Promise<void> {
@@ -1230,14 +1441,25 @@ export class POSDatabase {
     if (!backupPath) throw new Error('Backup path is required');
     if (!fs.existsSync(backupPath)) throw new Error('Backup file not found');
 
-    // Prevent restore while another restore is happening (best-effort)
-    // Close db, replace file, reopen.
-    this.db.close();
+    try {
+      // Prevent restore while another restore is happening (best-effort)
+      // Close db, replace file, reopen.
+      this.db.close();
 
-    fs.copyFileSync(backupPath, this.dbPath);
+      fs.copyFileSync(backupPath, this.dbPath);
 
-    this.db = new Database(this.dbPath);
-    this.initializeSchema();
+      this.db = new Database(this.dbPath);
+      this.initializeSchema();
+    } catch (error) {
+      // Try to reopen DB if restore failed
+      try {
+        this.db = new Database(this.dbPath);
+        this.initializeSchema();
+      } catch (reopenError) {
+        console.error('Failed to reopen database after restore failed:', reopenError);
+      }
+      throw new Error(`Failed to restore backup: ${(error as Error).message}`);
+    }
   }
 
   async restoreBackupById(backupId: string): Promise<void> {

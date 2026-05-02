@@ -116,6 +116,7 @@ export default function POSPage({ user }: { user: LocalUser }) {
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [lastOrder, setLastOrder] = useState<any>(null);
   const [showReceipt, setShowReceipt] = useState(false);
+  const [emailReceiptStatus, setEmailReceiptStatus] = useState<string | null>(null);
   const [hasPendingSync, setHasPendingSync] = useState(false);
   const [mpesaPhone, setMpesaPhone] = useState('');
   const [showMpesaInput, setShowMpesaInput] = useState(false);
@@ -448,6 +449,19 @@ export default function POSPage({ user }: { user: LocalUser }) {
               note: `Credit sale ${createdOrder.id.slice(0, 8).toUpperCase()}`
             });
           }
+
+          if (customer.email) {
+            try {
+              await dataService.sendEmailReceipt({
+                order: { id: createdOrder.id, ...orderData },
+                customerEmail: customer.email
+              });
+              setEmailReceiptStatus(`Receipt emailed to ${customer.email}`);
+            } catch (emailError) {
+              console.warn('Email receipt failed:', emailError);
+              setEmailReceiptStatus('Receipt email failed. Check email settings.');
+            }
+          }
         }
       }
 
@@ -460,6 +474,7 @@ export default function POSPage({ user }: { user: LocalUser }) {
       setSelectedCustomerId('');
       setOrderSuccess(true);
       setShowReceipt(true);
+      setTimeout(() => setEmailReceiptStatus(null), 8000);
       setTimeout(() => setOrderSuccess(false), 3000);
     } catch (error) {
       console.error('Checkout error:', error);
@@ -654,6 +669,9 @@ export default function POSPage({ user }: { user: LocalUser }) {
                 </div>
               </div>
 
+              {emailReceiptStatus && (
+                <p className="text-[10px] font-bold text-cyan-300 text-center mb-4">{emailReceiptStatus}</p>
+              )}
               <div className="mt-8 grid grid-cols-2 gap-4 no-print">
                 <button 
                   onClick={() => setShowReceipt(false)}
@@ -735,9 +753,12 @@ export default function POSPage({ user }: { user: LocalUser }) {
         </header>
 
         {/* Local database status */}
-        <div className="flex items-center justify-center gap-2 px-3 py-2 panel-soft rounded-full text-xs font-mono max-w-fit border border-slate-700/80">
-          <Wifi className="w-3 h-3 text-emerald-400" />
-          <span className="text-emerald-300">Local DB Ready</span>
+        <div className="flex items-center justify-between gap-3 px-4 py-3 panel-soft rounded-3xl text-xs font-mono border border-slate-700/80 shadow-sm shadow-slate-950/10">
+          <div className="flex items-center gap-2 text-slate-200">
+            <Wifi className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="font-semibold text-emerald-300">Local DB Ready</span>
+          </div>
+          <p className="text-slate-400">Search products or use categories to start selling faster.</p>
         </div>
 
         {showCameraScanner && (
@@ -872,9 +893,18 @@ export default function POSPage({ user }: { user: LocalUser }) {
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
           <AnimatePresence initial={false}>
             {cart.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center opacity-20 py-20 grayscale">
-                <ShoppingCart className="w-12 h-12 mb-4" />
-                <p className="font-mono text-xs tracking-widest">Cart is empty</p>
+              <div className="h-full flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-700/80 bg-slate-950/80 p-8 text-center space-y-4">
+                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-slate-900/90 shadow-lg shadow-cyan-500/10">
+                  <ShoppingCart className="w-8 h-8 text-cyan-300" />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-black tracking-tight text-slate-100">No items in the order yet</p>
+                  <p className="text-[11px] text-slate-400 max-w-[220px]">Tap a product on the left to add it to the cart and complete the sale.</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button type="button" onClick={() => setViewMode('grid')} className="rounded-full bg-slate-800 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.24em] text-slate-100 hover:bg-slate-700 transition">Browse Products</button>
+                  <button type="button" onClick={() => setShowCameraScanner(true)} className="rounded-full border border-slate-700 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.24em] text-cyan-200 hover:bg-slate-900 transition">Open Scanner</button>
+                </div>
               </div>
             ) : (
               cart.map(item => (
@@ -988,23 +1018,25 @@ export default function POSPage({ user }: { user: LocalUser }) {
             </div>
           )}
 
-          <div className="space-y-2 py-4 border-t border-slate-700">
-            <div className="flex justify-between text-xs font-mono opacity-60">
-              <span>Grand Total</span>
-              <span>Ksh {total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-            </div>
-            <div className="flex justify-between text-xs font-mono opacity-60">
-              <span>Paid So Far</span>
-              <span className={cn(totalPaid >= total ? "text-emerald-600 font-bold" : "")}>Ksh {totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+          <div className="space-y-3 py-4 border-t border-slate-700">
+            <div className="flex items-center justify-between gap-3 bg-slate-900/90 rounded-3xl px-4 py-3 border border-slate-700 shadow-sm">
+              <div>
+                <p className="text-[9px] uppercase tracking-[0.3em] text-slate-400">Grand Total</p>
+                <p className="text-xl font-black tracking-tight">Ksh {total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[9px] uppercase tracking-[0.3em] text-slate-400">Paid So Far</p>
+                <p className={cn("text-sm font-bold", totalPaid >= total ? "text-emerald-400" : "text-slate-200")}>Ksh {totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+              </div>
             </div>
             {!isCreditSale && totalPaid > total && (
-              <div className="flex justify-between text-xs font-mono text-blue-300 font-bold bg-slate-900 p-2 border border-slate-700">
+              <div className="flex justify-between text-[10px] font-bold text-blue-300 bg-slate-900/90 p-3 rounded-3xl border border-slate-700">
                 <span>Change Ready</span>
                 <span>Ksh {(totalPaid - total).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
               </div>
             )}
             {isCreditSale && totalPaid < total && (
-              <div className="flex justify-between text-xs font-mono text-rose-300 font-bold bg-slate-900 p-2 border border-slate-700">
+              <div className="flex justify-between text-[10px] font-bold text-rose-300 bg-slate-900/90 p-3 rounded-3xl border border-slate-700">
                 <span>Credit Amount</span>
                 <span>Ksh {(total - totalPaid).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
               </div>

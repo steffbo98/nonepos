@@ -6,7 +6,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import POSPage from './pages/POSPage';
-import DashboardPage from './pages/DashboardPage';
+import AdminAnalyticsPage from './pages/AdminAnalyticsPage';
 import InventoryPage from './pages/InventoryPage';
 import LoginPage from './pages/LoginPage';
 import ChatPage from './pages/ChatPage';
@@ -15,8 +15,10 @@ import ExpensesPage from './pages/ExpensesPage';
 import CustomersPage from './pages/CustomersPage';
 import SalesHistoryPage from './pages/SalesHistoryPage';
 import PurchasesPage from './pages/PurchasesPage';
+import BillingPage from './pages/BillingPage';
 import Navbar from './components/Navbar';
 import { startCloudSync } from './lib/syncManager';
+import { getDataService } from './lib/dataService';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserProfile, UserProfileProvider } from './hooks/useUserProfile';
 
@@ -29,6 +31,15 @@ interface LocalUser {
   role?: 'admin' | 'staff';
   active?: boolean;
 }
+
+type LicenseStatus = {
+  active: boolean;
+  plan?: string;
+  expiresAt?: string;
+  activationUrl?: string;
+  licenseKey?: string;
+  lastChecked?: string;
+} | null;
 
 const SESSION_STORAGE_KEY = 'nonepos.currentUser';
 
@@ -56,7 +67,10 @@ function isValidSessionUser(value: unknown): value is LocalUser {
 export default function App() {
   const [user, setUser] = useState<LocalUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [licenseStatus, setLicenseStatus] = useState<LicenseStatus>(null);
+  const [licenseLoading, setLicenseLoading] = useState(false);
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>('dark');
+  const dataService = getDataService();
 
   useEffect(() => {
     try {
@@ -90,15 +104,65 @@ export default function App() {
     }
   }, [user]);
 
+  useEffect(() => {
+    const loadLicenseStatus = async () => {
+      if (!user) {
+        setLicenseStatus(null);
+        setLicenseLoading(false);
+        return;
+      }
+
+      setLicenseLoading(true);
+      try {
+        const billingSetting = await dataService.getSetting('billing');
+        const config = billingSetting?.value ? JSON.parse(billingSetting.value) : null;
+        setLicenseStatus({
+          active: Boolean(config?.active),
+          plan: config?.plan,
+          expiresAt: config?.expiresAt,
+          activationUrl: config?.activationUrl,
+          licenseKey: config?.licenseKey,
+          lastChecked: config?.lastChecked,
+        });
+      } catch (error) {
+        console.error('Failed to load billing status:', error);
+        setLicenseStatus({ active: false });
+      } finally {
+        setLicenseLoading(false);
+      }
+    };
+
+    void loadLicenseStatus();
+  }, [user, dataService]);
+
   const handleAuth = (nextUser: LocalUser) => {
     const sessionUser = normalizeUser(nextUser);
     localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionUser));
     setUser(sessionUser);
   };
 
+  const refreshBillingStatus = async () => {
+    try {
+      const billingSetting = await dataService.getSetting('billing');
+      const config = billingSetting?.value ? JSON.parse(billingSetting.value) : null;
+      setLicenseStatus({
+        active: Boolean(config?.active),
+        plan: config?.plan,
+        expiresAt: config?.expiresAt,
+        activationUrl: config?.activationUrl,
+        licenseKey: config?.licenseKey,
+        lastChecked: config?.lastChecked,
+      });
+    } catch (error) {
+      console.error('Failed to refresh billing status:', error);
+      setLicenseStatus({ active: false });
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem(SESSION_STORAGE_KEY);
     setUser(null);
+    setLicenseStatus(null);
   };
 
   const profile: UserProfile | null = user ? {
@@ -112,6 +176,27 @@ export default function App() {
   const adminRoute = (element: React.ReactNode) => {
     if (!user) return <Navigate to="/login" />;
     if (profile?.role !== 'admin') return <Navigate to="/" replace />;
+    return element;
+  };
+
+  const licenseRoute = (element: React.ReactNode) => {
+    if (!user) return <Navigate to="/login" />;
+    if (licenseLoading) {
+      return (
+        <div className="flex items-center justify-center h-screen bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.18),_transparent_24%),radial-gradient(circle_at_top_right,_rgba(16,185,129,0.12),_transparent_18%),linear-gradient(180deg,#020617,_#07101c)]">
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+            className="w-10 h-10 border-4 border-slate-300/20 border-t-transparent rounded-full"
+          />
+        </div>
+      );
+    }
+
+    if (!licenseStatus?.active) {
+      return <Navigate to="/billing" replace />;
+    }
+
     return element;
   };
 
@@ -131,20 +216,34 @@ export default function App() {
     <Router>
       <UserProfileProvider user={profile}>
         <div className="app-shell min-h-screen font-sans">
-          {user && <Navbar user={user} onLogout={handleLogout} />}
+          {user && <Navbar user={user} onLogout={handleLogout} themeMode={themeMode} licenseActive={Boolean(licenseStatus?.active)} />}
           <main className={user ? "pt-20 px-4 md:px-6 lg:px-8 pb-10 max-w-[1700px] mx-auto" : "min-h-screen flex items-center justify-center px-4"}>
             <AnimatePresence mode="wait">
               <Routes>
                 <Route path="/login" element={!user ? <LoginPage onAuth={handleAuth} /> : <Navigate to="/" />} />
-                <Route path="/" element={user ? <POSPage user={user} /> : <Navigate to="/login" />} />
-                <Route path="/dashboard" element={adminRoute(<DashboardPage />)} />
-                <Route path="/inventory" element={user ? <InventoryPage /> : <Navigate to="/login" />} />
-                <Route path="/sales" element={user ? <SalesHistoryPage /> : <Navigate to="/login" />} />
-                <Route path="/purchases" element={adminRoute(<PurchasesPage />)} />
-                <Route path="/expenses" element={user ? <ExpensesPage /> : <Navigate to="/login" />} />
-                <Route path="/customers" element={user ? <CustomersPage /> : <Navigate to="/login" />} />
-                <Route path="/chat" element={user ? <ChatPage /> : <Navigate to="/login" />} />
+                <Route path="/" element={licenseRoute(<POSPage user={user!} />)} />
+                <Route path="/dashboard" element={licenseRoute(adminRoute(<AdminAnalyticsPage />))} />
+                <Route path="/inventory" element={licenseRoute(<InventoryPage />)} />
+                <Route path="/sales" element={licenseRoute(<SalesHistoryPage />)} />
+                <Route path="/purchases" element={licenseRoute(adminRoute(<PurchasesPage />))} />
+                <Route path="/expenses" element={licenseRoute(<ExpensesPage />)} />
+                <Route path="/customers" element={licenseRoute(<CustomersPage />)} />
+                <Route path="/chat" element={licenseRoute(<ChatPage />)} />
                 <Route path="/settings" element={adminRoute(<SettingsPage themeMode={themeMode} onThemeModeChange={setThemeMode} />)} />
+                <Route
+                  path="/billing"
+                  element={
+                    user ? (
+                      licenseStatus?.active ? (
+                        <Navigate to="/" replace />
+                      ) : (
+                        <BillingPage billingStatus={licenseStatus} refreshBilling={refreshBillingStatus} />
+                      )
+                    ) : (
+                      <Navigate to="/login" />
+                    )
+                  }
+                />
               </Routes>
             </AnimatePresence>
           </main>
